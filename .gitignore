@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+.seraph_cache/
+*.egg-info/
+dist/
+build/
+experiments/runs/
+experiments/models/*.pkl

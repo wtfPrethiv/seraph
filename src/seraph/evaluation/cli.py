@@ -60,6 +60,60 @@ def run(
         )
 
 
+@app.command()
+def sweep(spec: str = "experiments/configs/dense_sweep.yaml", only: list[str] = typer.Option([])) -> None:
+    """Dense model sweep; one model at a time, freeing GPU memory in between."""
+    import gc
+    import traceback
+    from pathlib import Path
+
+    import yaml
+
+    from seraph.config import load_config
+    from seraph.evaluation.experiment import run_experiment
+
+    s = yaml.safe_load(Path(spec).read_text())
+    base = Path(spec).parent / s["base"]
+    for model in s["models"]:
+        if only and model not in only:
+            continue
+        for split in s["splits"]:
+            cfg = load_config(base, {"name": f"b2_dense_{model}", "retrieval": {"dense_model": model}})
+            try:
+                m = run_experiment(cfg, split=split)["metrics"]
+                typer.echo(f"{model:18s} {split:10s} ndcg@10={m['ndcg@10']:.4f} r@100={m['recall@100']:.4f}")
+            except Exception:
+                typer.echo(f"{model:18s} {split:10s} FAILED")
+                traceback.print_exc()
+                break
+            finally:
+                gc.collect()
+                try:
+                    import torch
+
+                    torch.cuda.empty_cache()
+                except ImportError:
+                    pass
+
+
+@app.command("table")
+def table_cmd(
+    prefix: str = "",
+    splits: list[str] = typer.Option(["dev", "dev_stdin"], "--split"),
+    out: str | None = None,
+    results_dir: str = "experiments/results",
+) -> None:
+    """Print (and optionally save) a markdown results table."""
+    from pathlib import Path
+
+    from seraph.evaluation.report import load_results, table
+
+    md = table(load_results(results_dir, prefix), splits)
+    typer.echo(md)
+    if out:
+        Path(out).write_text(md)
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

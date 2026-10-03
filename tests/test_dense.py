@@ -1,0 +1,39 @@
+import numpy as np
+import pytest
+
+from fakes import FakeEmbedder, make_chunk
+from seraph.retrieval.semantic import CachedEmbedder, DenseRetriever
+from seraph.retrieval.vectors import VectorIndex
+from seraph.types import AnalyzedQuery
+
+
+def test_vector_index_numpy_matches_faiss():
+    rng = np.random.default_rng(0)
+    docs, qs = rng.normal(size=(50, 8)), rng.normal(size=(3, 8))
+    a, b = VectorIndex(8, use_faiss=False), VectorIndex(8)
+    a.add(docs)
+    b.add(docs)
+    sa, ia = a.search(qs, 5)
+    sb, ib = b.search(qs, 5)
+    assert (ia == ib).all() and np.allclose(sa, sb, atol=1e-5)
+
+
+def test_dense_retriever_and_cache(tmp_path):
+    chunks = [make_chunk("sort the array of integers"), make_chunk("open a socket connection")]
+    emb = CachedEmbedder(FakeEmbedder(), tmp_path)
+    r = DenseRetriever(emb)
+    r.index(chunks)
+    assert list((tmp_path / "embeddings" / "fake").glob("d_*.npy"))
+    hits = r.search(AnalyzedQuery.plain("sort integers"), 2)
+    assert hits[0].chunk == chunks[0] and "semantic" in hits[0].scores
+    assert r.doc_vectors([chunks[1].chunk_hash]).shape == (1, 64)
+
+
+@pytest.mark.gpu
+def test_real_embedder_smoke():
+    pytest.importorskip("sentence_transformers")
+    from seraph.retrieval.semantic import load_embedder
+
+    e = load_embedder("gte-modernbert")
+    v = e.encode_queries(["reverse a linked list"])
+    assert v.shape == (1, e.dim)

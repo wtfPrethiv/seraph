@@ -121,7 +121,7 @@ class RetrievalConfig(BaseModel):
     bm25_b: float = 0.75
     bm25_stem: bool = True
     use_dense: bool = False
-    dense_model: str = "jina-code-v2"
+    dense_model: str = "qwen3-emb-0.6b"
     fusion: Literal["none", "rrf", "weighted", "adaptive"] = "rrf"
     rrf_k: int = 60
     fusion_norm: Literal["minmax", "zscore"] = "minmax"
@@ -166,6 +166,7 @@ class SeraphConfig(BaseModel):
     seed: int = 42
     device: str = "auto"
     cache_dir: str = ".seraph_cache"
+    cache_query_embeddings: bool = True  # turn off when measuring latency
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
 

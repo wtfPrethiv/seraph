@@ -7,4 +7,5 @@ retrieval:
   bm25_b: 0.9
   bm25_stem: false
   use_dense: false
+  dense_model: qwen3-emb-0.6b
   fusion: none

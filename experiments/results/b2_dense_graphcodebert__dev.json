@@ -1,0 +1,80 @@
+{
+  "name": "b2_dense_graphcodebert",
+  "split": "dev",
+  "n_queries": 1000,
+  "metrics": {
+    "ndcg@1": 0.002,
+    "mrr@1": 0.002,
+    "recall@1": 0.002,
+    "ndcg@10": 0.005429155394913471,
+    "mrr@10": 0.003798412698412698,
+    "recall@10": 0.011,
+    "ndcg@100": 0.01919652629393012,
+    "mrr@100": 0.006234691492288064,
+    "recall@100": 0.08,
+    "latency_p50_ms": 4.754970312433215,
+    "latency_p95_ms": 15.111653124904478,
+    "latency_mean_ms": 5.691789399992558
+  },
+  "index_seconds": 151.31074980000267,
+  "meta": {
+    "git_sha": "eb779c8",
+    "config_hash": "63dad15c3d",
+    "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
+    "models": {
+      "semantic": "graphcodebert@2b0488a7bb0eefc7041f1bb2cad1ab26b0da269d"
+    },
+    "seed": 42,
+    "python": "3.12.15",
+    "timestamp": "2026-10-03T23:30:12"
+  },
+  "config": {
+    "name": "b2_dense_graphcodebert",
+    "seed": 42,
+    "device": "auto",
+    "cache_dir": ".seraph_cache",
+    "retrieval": {
+      "first_stage_k": 100,
+      "use_bm25": false,
+      "bm25_k1": 1.2,
+      "bm25_b": 0.9,
+      "bm25_stem": false,
+      "use_dense": true,
+      "dense_model": "graphcodebert",
+      "fusion": "none",
+      "rrf_k": 60,
+      "fusion_norm": "minmax",
+      "static_weights": {
+        "lexical": 0.3,
+        "semantic": 0.7,
+        "structural": 0.0,
+        "graph": 0.0,
+        "evolution": 0.0
+      },
+      "use_reranker": false,
+      "reranker_model": "bge-reranker-v2-m3",
+      "rerank_depth": 100,
+      "rerank_blend": 0.0,
+      "use_query_analyzer": false,
+      "analyzer": "rules",
+      "use_decomposition": false,
+      "adaptive_weights": "off",
+      "weight_model_path": null,
+      "use_structural": false,
+      "structural_model_path": null,
+      "use_graph_expansion": false,
+      "graph_hops": 1,
+      "graph_decay": 0.5,
+      "use_evolution": false,
+      "use_dedup": false,
+      "use_mmr": false,
+      "mmr_lambda": 0.7
+    },
+    "llm": {
+      "base_url": "http://localhost:11434/v1",
+      "model": "qwen2.5-coder:7b",
+      "api_key_env": "OPENAI_API_KEY",
+      "temperature": 0.0
+    }
+  }
+}

@@ -119,6 +119,7 @@ class RetrievalConfig(BaseModel):
     use_bm25: bool = True
     bm25_k1: float = 1.2
     bm25_b: float = 0.75
+    bm25_stem: bool = True
     use_dense: bool = False
     dense_model: str = "jina-code-v2"
     fusion: Literal["none", "rrf", "weighted", "adaptive"] = "rrf"

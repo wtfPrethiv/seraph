@@ -2,7 +2,8 @@
 
 Splits:
   - `fit`:  train queries minus dev (used to train learned components)
-  - `dev`:  fixed-seed 10% of train (used for all tuning)
+  - `dev`:  fixed-seed 20% of train (used for all tuning)
+  - `dev_stdin`: dev queries whose gold solution reads stdin
   - `test`: official split, only reachable with `final=True`
 The corpus (8,765 solutions) is shared by every split.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -21,8 +23,10 @@ from seraph.evaluation.metrics import Run, evaluate, latency_stats
 from seraph.types import AnalyzedQuery, Chunk, ScoredChunk
 
 TASK_NAME = "AppsRetrieval"
-DEV_FRACTION = 0.1
+DEV_FRACTION = 0.2
 DEV_SEED = 13
+# Train golds are ~1/3 stdin programs (rest call-based); `dev_stdin` mirrors the stdin format.
+_STDIN = re.compile(r"\binput\s*\(|sys\.stdin")
 
 
 class SplitGuardError(RuntimeError):
@@ -55,6 +59,8 @@ class AppsData:
         dev_ids = dev_query_ids(self.train_queries)
         if name == "dev":
             ids = sorted(dev_ids)
+        elif name == "dev_stdin":
+            ids = sorted(q for q in dev_ids if self._gold_reads_stdin(q))
         elif name == "fit":
             ids = sorted(set(self.train_queries) - dev_ids)
         else:
@@ -64,6 +70,9 @@ class AppsData:
             {q: self.train_queries[q] for q in ids},
             {q: self.train_qrels[q] for q in ids},
         )
+
+    def _gold_reads_stdin(self, qid: str) -> bool:
+        return any(_STDIN.search(self.corpus[d]) for d in self.train_qrels[qid])
 
     def chunks(self) -> list[Chunk]:
         return corpus_to_chunks(self.corpus)

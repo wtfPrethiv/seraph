@@ -59,7 +59,7 @@ def test_runfile_roundtrip(tmp_path):
 def test_dev_split_is_stable_and_disjoint():
     train = {f"q{i}": "x" for i in range(1000)}
     a, b = dev_query_ids(train), dev_query_ids(train)
-    assert a == b and len(a) == 100
+    assert a == b and len(a) == 200
 
 
 def test_test_split_guard():

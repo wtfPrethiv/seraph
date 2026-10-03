@@ -29,6 +29,7 @@ eval = [
     "mteb>=1.38,<2",
     "datasets>=2.20",
     "lightgbm>=4.3",
+    "pillow>=12.3.0",
 ]
 llm = ["openai>=1.40"]
 

@@ -114,6 +114,43 @@ def table_cmd(
         Path(out).write_text(md)
 
 
+@app.command("tune-fusion")
+def tune_fusion(config: str = "experiments/configs/b3_hybrid_weighted.yaml", split: str = "dev_stdin") -> None:
+    """Retrieve each view once, then grid-search RRF k and weighted-fusion weights."""
+    from seraph.config import load_config
+    from seraph.evaluation.coir import score_run
+    from seraph.memory import InMemoryChunkStore
+    from seraph.retrieval.fusion import fuse
+    from seraph.retrieval.pipeline import Pipeline
+    from seraph.types import AnalyzedQuery
+
+    cfg = load_config(config)
+    data = load_apps(cfg.cache_dir)
+    s = data.split(split)
+    pipe = Pipeline.from_config(cfg, InMemoryChunkStore(data.chunks()))
+    qs = [AnalyzedQuery.plain(t, qid=q) for q, t in s.queries.items()]
+    per_view = pipe.retrieve_views(qs, cfg.retrieval.first_stage_k)
+
+    def score(method, weights=None, rrf_k=60, norm="minmax"):
+        run_ = {}
+        for i, q in enumerate(qs):
+            hits = fuse({v: h[i] for v, h in per_view.items()}, method, weights, rrf_k, norm)
+            run_[q.qid] = {h.chunk_hash: h.score for h in hits[:100]}
+        return score_run(run_, s.qrels)
+
+    rows = []
+    for k in (10, 30, 60, 100):
+        m = score("rrf", rrf_k=k)
+        rows.append((m["ndcg@10"], m["recall@100"], f"rrf k={k}"))
+    for norm in ("minmax", "zscore"):
+        for wl in (0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5):
+            m = score("weighted", {"lexical": wl, "semantic": 1 - wl}, norm=norm)
+            rows.append((m["ndcg@10"], m["recall@100"], f"weighted {norm} lexical={wl}"))
+    rows.sort(reverse=True)
+    for ndcg, r100, desc in rows:
+        typer.echo(f"ndcg@10={ndcg:.4f} r@100={r100:.4f} {desc}")
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

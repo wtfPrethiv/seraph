@@ -1,0 +1,8 @@
+extends: base.yaml
+name: b3_hybrid_weighted
+retrieval:
+  use_bm25: true
+  use_dense: true
+  fusion: weighted
+  fusion_norm: minmax
+  static_weights: {lexical: 0.2, semantic: 0.8}

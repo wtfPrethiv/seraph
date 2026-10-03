@@ -1,0 +1,7 @@
+extends: base.yaml
+name: b3_hybrid_rrf
+retrieval:
+  use_bm25: true
+  use_dense: true
+  fusion: rrf
+  rrf_k: 60

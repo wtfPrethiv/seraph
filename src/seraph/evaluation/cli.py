@@ -79,8 +79,8 @@ def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> Non
                 m = score_run(run_, s.qrels)
                 rows.append((m["ndcg@10"], m["recall@100"], k1, b, stem))
     rows.sort(reverse=True)
-    for row in rows[:8]:
-        typer.echo("ndcg@10=%.4f r@100=%.4f k1=%s b=%s stem=%s" % row)
+    for ndcg, r100, k1, b, stem in rows[:8]:
+        typer.echo(f"ndcg@10={ndcg:.4f} r@100={r100:.4f} k1={k1} b={b} stem={stem}")
 
 
 def _parse_overrides(items: list[str]) -> dict:

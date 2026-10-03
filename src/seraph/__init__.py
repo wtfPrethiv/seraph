@@ -1,3 +1,5 @@
-"""Seraph: query-adaptive, evolution-aware code retrieval."""
+"""Seraph code intelligence engine."""
 
-__version__ = "0.1.0"
+from .index import Chunk, IndexStats, SearchHit, VersionedIndex
+
+__all__ = ["Chunk", "IndexStats", "SearchHit", "VersionedIndex"]

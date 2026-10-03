@@ -1,11 +1,6 @@
+.seraph/
 __pycache__/
-*.pyc
-.venv/
 .pytest_cache/
-.ruff_cache/
-.seraph_cache/
+.venv/
+*.pyc
 *.egg-info/
-dist/
-build/
-experiments/runs/
-experiments/models/*.pkl

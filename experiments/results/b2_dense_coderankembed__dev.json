@@ -1,0 +1,80 @@
+{
+  "name": "b2_dense_coderankembed",
+  "split": "dev",
+  "n_queries": 1000,
+  "metrics": {
+    "ndcg@1": 0.594,
+    "mrr@1": 0.594,
+    "recall@1": 0.594,
+    "ndcg@10": 0.6500150055849292,
+    "mrr@10": 0.6319654761904762,
+    "recall@10": 0.706,
+    "ndcg@100": 0.670692616543821,
+    "mrr@100": 0.6359020806608034,
+    "recall@100": 0.806,
+    "latency_p50_ms": 47.500092187419796,
+    "latency_p95_ms": 59.44514999987405,
+    "latency_mean_ms": 51.6744553999888
+  },
+  "index_seconds": 222.80440379999345,
+  "meta": {
+    "git_sha": "eb779c8",
+    "config_hash": "cd5382ae7d",
+    "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
+    "models": {
+      "semantic": "coderankembed@3c4b60807d71f79b43f3c4363786d9493691f8b1"
+    },
+    "seed": 42,
+    "python": "3.12.15",
+    "timestamp": "2026-10-03T23:43:31"
+  },
+  "config": {
+    "name": "b2_dense_coderankembed",
+    "seed": 42,
+    "device": "auto",
+    "cache_dir": ".seraph_cache",
+    "retrieval": {
+      "first_stage_k": 100,
+      "use_bm25": false,
+      "bm25_k1": 1.2,
+      "bm25_b": 0.9,
+      "bm25_stem": false,
+      "use_dense": true,
+      "dense_model": "coderankembed",
+      "fusion": "none",
+      "rrf_k": 60,
+      "fusion_norm": "minmax",
+      "static_weights": {
+        "lexical": 0.3,
+        "semantic": 0.7,
+        "structural": 0.0,
+        "graph": 0.0,
+        "evolution": 0.0
+      },
+      "use_reranker": false,
+      "reranker_model": "bge-reranker-v2-m3",
+      "rerank_depth": 100,
+      "rerank_blend": 0.0,
+      "use_query_analyzer": false,
+      "analyzer": "rules",
+      "use_decomposition": false,
+      "adaptive_weights": "off",
+      "weight_model_path": null,
+      "use_structural": false,
+      "structural_model_path": null,
+      "use_graph_expansion": false,
+      "graph_hops": 1,
+      "graph_decay": 0.5,
+      "use_evolution": false,
+      "use_dedup": false,
+      "use_mmr": false,
+      "mmr_lambda": 0.7
+    },
+    "llm": {
+      "base_url": "http://localhost:11434/v1",
+      "model": "qwen2.5-coder:7b",
+      "api_key_env": "OPENAI_API_KEY",
+      "temperature": 0.0
+    }
+  }
+}

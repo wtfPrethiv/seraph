@@ -1,0 +1,13 @@
+# Baseline 2: dense-only sweep. Each model runs with b2_dense.yaml as the base config.
+base: b2_dense.yaml
+splits: [dev, dev_stdin]
+models:
+  - codebert
+  - graphcodebert
+  - unixcoder
+  - codet5p-110m
+  - jina-code-v2
+  - codesage-small
+  - coderankembed
+  - gte-modernbert
+  - qwen3-emb-0.6b

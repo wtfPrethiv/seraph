@@ -1,20 +1,72 @@
-[build-system]
-requires = ["setuptools>=69"]
-build-backend = "setuptools.build_meta"
-
 [project]
-name = "seraph-code-intelligence"
+name = "seraph"
 version = "0.1.0"
-description = "Version-aware code retrieval for the Seraph hackathon"
-requires-python = ">=3.12"
-dependencies = []
+description = "Query-adaptive, evolution-aware code retrieval"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { file = "LICENSE" }
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.7",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.5",
+    "bm25s>=0.2.6",
+    "PyStemmer>=2.2",
+    "tree-sitter>=0.23",
+    "tree-sitter-python>=0.23",
+    "typer>=0.12",
+]
 
 [project.optional-dependencies]
-mcp = ["mcp>=1.28,<2"]
+gpu = [
+    "torch>=2.4",
+    "transformers>=4.51,<5",
+    "sentence-transformers>=3.4",
+    "faiss-cpu>=1.8",
+    "einops>=0.8",
+]
+eval = [
+    "mteb>=1.38,<2",
+    "datasets>=2.20",
+    "lightgbm>=4.3",
+    "pillow>=12.3.0",
+]
+llm = ["openai>=1.40"]
 
 [project.scripts]
-seraph = "seraph.cli:main"
-seraph-mcp = "seraph.server:main"
+seraph-eval = "seraph.evaluation.cli:app"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[dependency-groups]
+dev = ["pytest>=8.2", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/seraph"]
+
+[tool.uv]
+python-preference = "managed"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu126", extra = "gpu" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = ["gpu: requires CUDA and model downloads", "network: requires network access"]

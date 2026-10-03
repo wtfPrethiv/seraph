@@ -1,0 +1,2 @@
+extends: base.yaml
+name: b1_bm25

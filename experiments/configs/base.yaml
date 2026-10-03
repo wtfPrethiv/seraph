@@ -1,0 +1,11 @@
+# Shared defaults. Values tuned on dev_stdin (see experiments/README.md).
+seed: 42
+retrieval:
+  first_stage_k: 100
+  use_bm25: true
+  bm25_k1: 1.2
+  bm25_b: 0.9
+  bm25_stem: false
+  use_dense: false
+  dense_model: qwen3-emb-0.6b
+  fusion: none

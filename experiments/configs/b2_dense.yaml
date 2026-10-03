@@ -1,0 +1,5 @@
+extends: base.yaml
+name: b2_dense
+retrieval:
+  use_bm25: false
+  use_dense: true

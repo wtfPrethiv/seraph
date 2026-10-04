@@ -1,5 +1,8 @@
 # seraph
-Seraph - a query-adaptive code intelligence engine that combines semantic, lexical, structural, dependency, and Git-aware retrieval to help coding agents understand large, evolving codebases.
+
+> Seraph - a query-adaptive code intelligence engine that combines semantic, lexical, structural, dependency, and Git-aware retrieval to help coding agents understand large, evolving codebases.
+
+---
 
 ## Submission
 
@@ -13,15 +16,19 @@ Team **floppydisk**, SRM Institute of Science and Technology · Samsung PRISM Ge
 | AppsRetrieval result JSON | [release `PRISM_GENAI_HACKATHON_Y2026`](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026) |
 | Agent integration | [Morpheus, `seraph-test` branch](https://github.com/projectakshith/morpheus/tree/seraph-test) |
 
+---
+
 ## Architecture diagram
 
 <img width="1822" height="1470" alt="Drawing 2026-10-04 22 53 23 excalidraw" src="https://github.com/user-attachments/assets/c5d717e2-6bf1-4298-a063-b4447efad135" />
+
+---
 
 ## For judges
 
 Everything below runs locally with no API keys. Commands are run from the repository root.
 
-**1. Setup**
+### 1. Setup
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh          # only if uv is missing
@@ -41,7 +48,9 @@ seraph-eval train-structural                            # trains the structural 
 mkdir -p .seraph_cache && curl -L https://github.com/wtfPrethiv/seraph/releases/download/PRISM_GENAI_HACKATHON_Y2026/bge-code-v1-corpus-embeddings.tar.gz | tar -xz -C .seraph_cache
 ```
 
-**2. P0: the screening score** (already attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026): nDCG@10 0.9770, MRR@10 0.9702)
+### 2. P0: the screening score
+
+Already attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026): **nDCG@10 0.9770, MRR@10 0.9702**.
 
 ```bash
 seraph-eval submit --final --out appsretrieval_results.json
@@ -49,7 +58,9 @@ seraph-eval submit --final --out appsretrieval_results.json
 
 The first run downloads BGE-Code-v1 (about 6 GB). Without the precomputed vectors above it also embeds the 8,765 corpus solutions; on an Apple M5 GPU the whole run took about an hour. Embeddings are cached in `.seraph_cache/`, so later runs and step 3 reuse them. Add `--set device=cpu` to force CPU.
 
-**3. Hands-on: ask your own questions** with the submitted pipeline (BM25 + BGE-Code-v1 + structural γ)
+### 3. Hands-on: ask your own questions
+
+Use the submitted pipeline (BM25 + BGE-Code-v1 + structural γ):
 
 ```bash
 seraph-eval ask "Read an integer n and print the sum of the digits of n factorial."
@@ -59,7 +70,9 @@ seraph-eval ask        # paste problems one by one; end each with a line holding
 
 Loading takes about 20 s once the corpus is embedded. A new question then takes about 0.2 s on an Apple M5 GPU and about 0.9 s on CPU, most of it spent encoding the question; a question asked before is served from the query cache in milliseconds. On CPU the first question after loading can still take several seconds while the model warms up. See [Performance](#performance). Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
 
-**4. P1: retrieval across versions** on this repository, between commit `6bc99db` and `da76e47` (the commit that added `seraph-eval ask`)
+### 4. P1: retrieval across versions
+
+On this repository, between commit `6bc99db` and `da76e47` (the commit that added `seraph-eval ask`):
 
 ```bash
 seraph --repo . index --ref 6bc99db                         # first index: parses all 65 files
@@ -70,7 +83,7 @@ seraph --repo . search "rank solutions for a programming problem and mark the kn
 
 These run in keyword mode and return in milliseconds. `export SERAPH_CONFIG=experiments/configs/submission.yaml` switches repository search to the BGE pipeline; the first search of a version then embeds its chunks (about 45 s for this repository on an Apple M5 GPU) and later searches take under a second.
 
-**5. Bonus: evolutionary retrieval**
+### 5. Bonus: evolutionary retrieval
 
 ```bash
 seraph --repo . search "known correct solution" --ref da76e47 --history   # every indexed version, identical code shown once
@@ -81,7 +94,11 @@ seraph --repo . deps search_index --direction out
 
 Symbols are followed across commits through renames and moves, so history results stay linked when code is renamed.
 
-**6. In a coding agent (optional).** [Morpheus](https://github.com/projectakshith/morpheus/tree/seraph-test) calls Seraph over MCP; see [MCP server](#mcp-server-morpheus-and-other-agents).
+### 6. In a coding agent (optional)
+
+[Morpheus](https://github.com/projectakshith/morpheus/tree/seraph-test) calls Seraph over MCP; see [MCP server](#mcp-server-morpheus-and-other-agents).
+
+---
 
 ## Performance
 
@@ -101,13 +118,15 @@ EmbeddingGemma-300M is the practical CPU choice: about 6x faster per question an
 
 **Indexing a large repository** (Django, keyword mode, CPU): release 5.1 indexes 2,899 files into 9,799 symbols in 31 s with 350 MB peak memory. Release 5.1.1, 28 commits later with 59 files changed, then re-indexes in 1.3 s: 38 files parsed, 9,560 of 9,802 symbols reused, reusing the nearest indexed ancestor. A search over 9,802 symbols takes about 1 ms once the CLI has loaded (about 2 s per CLI call, mostly loading the index).
 
+---
+
 ## Results
 
 CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored through `mteb.evaluate`. The submitted JSON is attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026).
 
 Both rows are the same pipeline (BM25 + dense view + structural γ, weighted fusion 0.16 / 0.64 / 0.2) with a different embedder in the dense view:
 
-| embedder | nDCG@10 | MRR@10 | Recall@10 | Recall@100 |
+| Embedder | nDCG@10 | MRR@10 | Recall@10 | Recall@100 |
 |---|---|---|---|---|
 | **BGE-Code-v1** (1.5B), submitted | **0.9770** | **0.9702** | 0.9971 | 0.9992 |
 | Qwen3-Embedding-0.6B | 0.7487 | 0.7039 | 0.8882 | 0.9835 |
@@ -123,6 +142,8 @@ seraph-eval submit --config experiments/configs/submission.yaml --final --out ap
 Add `--set retrieval.dense_model=qwen3-emb-0.6b` for the Qwen3 row. The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
 
 **How the test split was used.** The Qwen3 row was the first, frozen submission. We then compared embedders on dev, switched the dense view to BGE-Code-v1 and ran the test split again with the fusion weights unchanged (they were tuned for Qwen3, never on test). An intermediate run of BGE-Code-v1 alone, without BM25 or γ, scored 0.9795, so on this benchmark the extra views add nothing on top of a strong embedder. BGE-Code-v1 was trained on public code-retrieval data that likely overlaps the APPS train queries (dev_stdin 0.989); its test score matches the 98.08 its authors report.
+
+---
 
 ## How retrieval works
 
@@ -154,6 +175,8 @@ pipe = Pipeline.from_config(cfg, store, graph=graph, versions=versions)   # prot
 register_repo("myrepo", pipe)
 search("where is the config parsed", repo="myrepo", top_k=10, include_history=True).to_dict()
 ```
+
+---
 
 ## Versioned index, CLI and MCP server
 
@@ -224,6 +247,8 @@ In Morpheus, run `/seraph setup /path/to/seraph` once; it writes the server entr
 
 The server searches the Git repository it is started in (`SERAPH_REPO` overrides that, `SERAPH_DB` the database path). Tools: `search_code`, `search_at_version`, `search_history`, `find_symbol`, `find_dependencies`, `compare_versions` and `index_repository`; a search indexes the requested version on first use and returns path, commit, line range, snippet, score and timings. Morpheus renders the results as ranked cards, and `/versus <question>` runs the same question through Seraph and grep side by side.
 
+---
+
 ## Models: API first, local optional
 
 | Role | Default | Where it runs |
@@ -235,6 +260,8 @@ The server searches the Git repository it is started in (`SERAPH_REPO` overrides
 | Local rerankers | bge/jina/Qwen3 rerankers | same |
 
 Local model loading is off by default (`LocalModelsDisabledError`); the submission configs turn it on. The AppsRetrieval experiments below use Qwen3-Embedding-0.6B vectors that were computed once and cached in `.seraph_cache/embeddings/`. They are read from disk without loading the model, because embedding the 8,765-document corpus on the Gemini free tier (1,000 texts per day) would take about nine days. All API responses (embeddings, rerank orders, LLM analyses) are cached in SQLite or JSON under `.seraph_cache/`, so reruns are free.
+
+---
 
 ## Evaluation protocol (AppsRetrieval, CoIR)
 
@@ -251,7 +278,7 @@ The corpus has 8,765 Python solutions. **Distribution shift:** most train soluti
 
 From `seraph-eval ablate` (`experiments/configs/ablation.yaml`); the full table is in `experiments/results/ablation.md`. Deltas are against the previous row, except the MMR and rerank rows, which are compared with the structural row.
 
-| component | dev NDCG@10 | dev_stdin NDCG@10 | dev_stdin R@100 |
+| Component | dev NDCG@10 | dev_stdin NDCG@10 | dev_stdin R@100 |
 |---|---|---|---|
 | BM25 (code-aware tokenizer) | 0.3714 | 0.0941 | 0.2844 |
 | dense only (Qwen3-Embedding-0.6B) | 0.8367 | 0.7220 | 0.9701 |
@@ -268,13 +295,13 @@ The graph, dedup and evolution components cannot show gains on AppsRetrieval: it
 
 ### Dense model sweep
 
-On dev / dev_stdin NDCG@10, BGE-Code-v1 scores 0.992 / 0.989 and EmbeddingGemma-300M 0.744 / 0.782. BGE-Code-v1's dev numbers overstate it, since it was likely trained on these train queries; its test score is in Results. Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
+On dev / dev_stdin NDCG@10, BGE-Code-v1 scores 0.992 / 0.989 and EmbeddingGemma-300M 0.744 / 0.782. BGE-Code-v1's dev numbers overstate it, since it was likely trained on these train queries; its test score is in [Results](#results). Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
 
 ### Adaptive weights versus the oracle
 
 From `seraph-eval tune-adaptive` on dev (`experiments/results/adaptive_weights.md`). Each view is retrieved once; every query is scored at all 66 cells of a (lexical, semantic, structural) weight simplex with step 0.1; learned models are evaluated with 5-fold cross-validation.
 
-| weighting | dev NDCG@10 | dev_stdin NDCG@10 |
+| Weighting | dev NDCG@10 | dev_stdin NDCG@10 |
 |---|---|---|
 | static tuned (0.16 / 0.64 / 0.2) | 0.8531 | 0.7396 |
 | best single grid cell, 5-fold CV | 0.8518 | 0.7418 |
@@ -288,6 +315,8 @@ Per-query weighting has 4.4 to 5.7 NDCG points of headroom, but neither the rule
 ### Structural γ view
 
 Each snippet gets a sparse binary vector of 62 tree-sitter traits: input style (`input()`, `sys.stdin`, multi-test loops, grid reads), loop depth, recursion, `heapq`/`deque`/`bisect`/sorting, mod constants, bit operations and imports. A per-trait logistic regression on query TF-IDF, trained on `fit` (query, gold solution) pairs, predicts the traits the answer should have. A candidate's score is the Bernoulli log-likelihood ratio of its traits against the training prior, computed over the fused candidate pool. Weight 0.2 was chosen on dev, and larger weights hurt (0.5 drops dev_stdin to 0.718).
+
+---
 
 ## Reproducing
 
@@ -305,8 +334,9 @@ seraph-eval submit --final                 # upload JSON (experiments/configs/su
 
 The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota error stops the affected rung and marks it `skipped (quota)` without failing the run.
 
-## Limitations
+---
 
+## Limitations
 
 - The Gemini embedder works but has not been benchmarked on the full corpus because of free tier quota.
 - The test split was run without reranking: 3,765 listwise Gemini calls do not fit the free tier, and no local reranker has been benchmarked yet.
@@ -314,3 +344,9 @@ The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota er
 - Dense query decomposition was not ablated: the sub-queries have no cached embeddings. BM25 decomposition is in `b7_bm25_decomp`.
 - Measured latency excludes query encoding when vectors come from the cache.
 - Graph, evolution and dedup gains need SeraphBench, which is not yet available.
+
+##  License : 
+
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/wtfPrethiv/seraph/blob/main/LICENSE) file for details.
+
+---

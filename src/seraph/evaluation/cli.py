@@ -138,7 +138,8 @@ def _read_problem() -> str | None:
 @app.command()
 def ask(
     query: str | None = typer.Argument(None, help="problem text; omit it to paste problems interactively"),
-    file: str | None = typer.Option(None, "--file", help="read the problem text from a file"),
+    file: list[str] = typer.Option([], "--file", help="read a problem from a file; repeat for several problems"),
+    pause: bool = typer.Option(False, "--pause", help="wait for Enter before each problem after the first"),
     config: str = "experiments/configs/submission.yaml",
     top_k: int = 5,
     lines: int = 12,
@@ -193,7 +194,11 @@ def ask(
                 typer.echo(typer.style(f"    … {len(code) - lines} more lines", dim=True))
 
     if file:
-        answer(Path(file).read_text(encoding="utf-8"))
+        for i, path in enumerate(file):
+            if pause and i:
+                with open("/dev/tty") as tty:
+                    tty.readline()
+            answer(Path(path).read_text(encoding="utf-8"))
     elif query:
         answer(query)
     elif not sys.stdin.isatty():

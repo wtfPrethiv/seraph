@@ -9,3 +9,4 @@ dist/
 build/
 experiments/runs/
 experiments/models/*.pkl
+experiments/*.log

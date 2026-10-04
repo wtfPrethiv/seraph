@@ -57,6 +57,19 @@ def test_analyzer_and_decomposition_in_pipeline():
     assert [h.chunk.symbol for h in batch] == [r.symbol for r in resp.results]
 
 
+def test_graph_expansion_surfaces_callers():
+    store, graph, _ = sample_repo()
+    cfg = SeraphConfig.model_validate(
+        {"retrieval": {"use_dense": False, "fusion": "weighted", "use_graph_expansion": True,
+                       "static_weights": {"lexical": 0.5, "graph": 0.5}}}
+    )
+    p = Pipeline.from_config(cfg, store, graph=graph)
+    hits = p.search_batch([AnalyzedQuery.plain("who calls read_file")], 5)[0]
+    syms = [h.chunk.symbol for h in hits]
+    assert "cfg.parse_config" in syms[:2]
+    assert any("graph" in h.scores for h in hits)
+
+
 class FlipReranker:
     """Reverses the candidate order; checks the rerank stage is applied and the tail kept."""
 

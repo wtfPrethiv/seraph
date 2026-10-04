@@ -6,7 +6,7 @@ import time
 from collections.abc import Sequence
 
 from seraph.config import EMBEDDERS, SeraphConfig
-from seraph.protocols import ChunkStore, Embedder, Reranker, Retriever
+from seraph.protocols import ChunkStore, CodeGraph, Embedder, Reranker, Retriever, VersionStore
 from seraph.retrieval.fusion import fuse, rrf
 from seraph.retrieval.lexical import LexicalRetriever
 from seraph.types import AnalyzedQuery, Chunk, ScoredChunk, SearchResponse, SearchResult, SubQuery
@@ -20,10 +20,14 @@ class Pipeline:
         version: str = "HEAD",
         embedder: Embedder | None = None,
         reranker: Reranker | None = None,
+        graph: CodeGraph | None = None,
+        versions: VersionStore | None = None,
     ) -> None:
         self.cfg = cfg
         self.store = store
         self.version = version
+        self.graph = graph
+        self.versions = versions
         self._embedder = embedder
         self._reranker = reranker
         self._analyzer = None
@@ -119,17 +123,29 @@ class Pipeline:
             out[name] = combined
         return out
 
-    def weights_for(self, q: AnalyzedQuery) -> dict[str, float]:
+    def weights_for(self, q: AnalyzedQuery, views: Sequence[str] | None = None) -> dict[str, float]:
         r = self.cfg.retrieval
         w = q.weights if (r.fusion == "adaptive" and q.weights) else r.static_weights
-        return {v: w.get(v, 0.0) for v in self.views}
+        return {v: w.get(v, 0.0) for v in (views or self.views)}
+
+    def graph_view(
+        self, queries: Sequence[AnalyzedQuery], seeds: list[list[ScoredChunk]]
+    ) -> list[list[ScoredChunk]]:
+        from seraph.graph.traversal import direction_for, expand, kinds_for
+
+        r = self.cfg.retrieval
+        assert self.graph is not None
+        return [
+            expand(s, self.graph, self.store, kinds_for(q), direction_for(q), r.graph_hops, r.graph_decay)
+            for q, s in zip(queries, seeds, strict=True)
+        ]
 
     def fuse(self, queries: Sequence[AnalyzedQuery], per_view: dict[str, list[list[ScoredChunk]]]) -> list[list[ScoredChunk]]:
         r = self.cfg.retrieval
         out = []
         for i, q in enumerate(queries):
             runs = {v: hits[i] for v, hits in per_view.items()}
-            weights = None if r.fusion == "rrf" else self.weights_for(q)
+            weights = None if r.fusion == "rrf" else self.weights_for(q, list(runs))
             out.append(fuse(runs, r.fusion, weights, r.rrf_k, r.fusion_norm))
         return out
 
@@ -161,6 +177,8 @@ class Pipeline:
         r = self.cfg.retrieval
         depth = max(k, r.first_stage_k)
         per_view = self.retrieve_views(queries, depth)
+        if r.use_graph_expansion and self.graph is not None:
+            per_view["graph"] = self.graph_view(queries, self.fuse(queries, per_view))
         results = self.fuse(queries, per_view)
         if r.use_reranker:
             results = self.rerank(queries, results)

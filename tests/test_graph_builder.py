@@ -7,7 +7,8 @@ from seraph.config import RetrievalConfig, SeraphConfig
 from seraph.graph.builder import Ref, build_graph, extract_refs
 from seraph.graph.traversal import find_dependencies
 from seraph.index import VersionedIndex, _chunks
-from seraph.service import repo_graph, search_index
+from seraph.service import find_dependencies as lookup_dependencies
+from seraph.service import find_symbol, repo_graph, search_index
 from seraph.types import Direction, EdgeKind
 
 
@@ -108,6 +109,23 @@ def test_graph_expansion_reaches_callees_through_the_service(repo):
         out = search_index(index, "main entry point", "HEAD", 5, cfg=cfg)
     by_symbol = {r["symbol"]: r for r in out["results"]}
     assert "graph" in by_symbol["App"]["retrieval_scores"]
+
+
+def test_find_symbol_and_dependencies(repo):
+    path, first = repo
+    with VersionedIndex(path, path / "idx.sqlite") as index:
+        found = find_symbol(index, "parse_config", first)
+        assert [r["id"] for r in found["results"]] == ["pkg/cfg.py::parse_config"]
+        assert "json.loads" in found["results"][0]["text"]
+        assert find_symbol(index, "no_such", first)["results"] == []
+
+        out = lookup_dependencies(index, "main", first, "out")
+        assert [r["symbol"] for r in out["results"]] == ["app.py::main"]
+        chains = [c["symbols"] for c in out["results"][0]["chains"]]
+        assert ["app.py::main", "app.py::App", "pkg/cfg.py::parse_config", "pkg/io.py::read_file"] in chains
+
+        callers = lookup_dependencies(index, "read_file", first, "in", max_depth=1)
+        assert callers["results"][0]["chains"][0]["symbols"][-1] == "pkg/cfg.py::parse_config"
 
 
 def test_unknown_receivers_resolve_only_to_a_unique_method():

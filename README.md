@@ -70,10 +70,13 @@ uv sync
 seraph --repo /path/to/repo index --ref HEAD~1
 seraph --repo /path/to/repo index --ref HEAD
 seraph --repo /path/to/repo search "where is the input normalized" --ref HEAD
+seraph --repo /path/to/repo symbol parse_config
+seraph --repo /path/to/repo deps main --direction out
+seraph --repo /path/to/repo compare HEAD~1 HEAD
 seraph --repo /path/to/repo versions
 ```
 
-The database defaults to `REPO/.seraph/index.sqlite`, which Git ignores; `--db PATH` moves it. `index` reports how many files it parsed and how many chunks it reused, so index a parent commit before its child to get reuse. `search --history` searches every indexed commit. `search` prints a ranked list with index and search timings; `--json` prints the raw result. With `--history`, identical code found in several versions is returned once, with every version it appears in listed under `versions`; code that changed stays separate.
+The database defaults to `REPO/.seraph/index.sqlite`, which Git ignores; `--db PATH` moves it. `index` reports how many files it parsed and how many chunks it reused, so index a parent commit before its child to get reuse. `search --history` searches every indexed commit. `search` prints a ranked list with index and search timings; `--json` prints the raw result. With `--history`, identical code found in several versions is returned once, with every version it appears in listed under `versions`; code that changed stays separate. `symbol` looks up a definition by name or `path::symbol`. `deps` walks the graph from that symbol (`--direction out|in|both`). `compare` reports symbol, dependency and commit differences between two refs.
 
 ```python
 from seraph import VersionedIndex
@@ -119,7 +122,7 @@ In Morpheus, run `/seraph setup /path/to/seraph` once; it writes the server entr
 }
 ```
 
-The server searches the Git repository it is started in (`SERAPH_REPO` overrides that, `SERAPH_DB` the database path). Tools: `search_code`, `search_at_version`, `search_history` and `index_repository`; a search indexes the requested version on first use and returns path, commit, line range, snippet, score and timings. Morpheus renders the results as ranked cards, and `/versus <question>` runs the same question through Seraph and grep side by side.
+The server searches the Git repository it is started in (`SERAPH_REPO` overrides that, `SERAPH_DB` the database path). Tools: `search_code`, `search_at_version`, `search_history`, `find_symbol`, `find_dependencies`, `compare_versions` and `index_repository`; a search indexes the requested version on first use and returns path, commit, line range, snippet, score and timings. Morpheus renders the results as ranked cards, and `/versus <question>` runs the same question through Seraph and grep side by side.
 
 ## Models: API first, local optional
 

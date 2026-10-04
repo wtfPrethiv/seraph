@@ -131,6 +131,52 @@ def _pipeline(index: vindex.VersionedIndex, commit: str, include_history: bool, 
     return _PIPELINES[key]
 
 
+def find_symbol(index: vindex.VersionedIndex, name: str, ref: str = "HEAD") -> dict[str, Any]:
+    """Definitions matching `name` (`path::symbol`, `Class.method`, or a bare name) in one version."""
+    graph = repo_graph(index, ref)
+    commit = index.index_commit(ref).commit
+    results = []
+    for sid in graph.resolve(name):
+        oid = graph.chunk_for_symbol(sid)
+        if oid is None:
+            continue
+        results.append({"id": sid, **asdict(index.get_chunk(oid))})
+    return {"query": name, "resolved_commit": commit, "results": results}
+
+
+def find_dependencies(
+    index: vindex.VersionedIndex,
+    symbol: str,
+    ref: str = "HEAD",
+    direction: str = "out",
+    kinds: list[str] | None = None,
+    max_depth: int = 3,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Dependency chains from each symbol matching `symbol` in one version."""
+    from seraph.graph.traversal import find_dependencies as chains_from
+    from seraph.types import Direction, EdgeKind
+
+    graph = repo_graph(index, ref)
+    commit = index.index_commit(ref).commit
+    kind_set = {EdgeKind(k) for k in kinds} if kinds else None
+    results = []
+    for sid in graph.resolve(symbol):
+        chains = chains_from(graph, sid, Direction(direction), kind_set, max_depth, limit)
+        results.append({
+            "symbol": sid,
+            "chains": [
+                {
+                    "symbols": c.symbols,
+                    "score": round(c.score, 4),
+                    "edges": [{"src": e.src, "dst": e.dst, "kind": str(e.kind)} for e in c.edges],
+                }
+                for c in chains
+            ],
+        })
+    return {"query": symbol, "resolved_commit": commit, "direction": direction, "results": results}
+
+
 _CHANGE_ORDER = ("added", "modified", "renamed", "moved", "deleted")
 
 

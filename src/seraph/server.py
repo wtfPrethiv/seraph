@@ -11,6 +11,9 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from .index import VersionedIndex
+from .service import compare_versions as compare_index
+from .service import find_dependencies as lookup_dependencies
+from .service import find_symbol as lookup_symbol
 from .service import search_index
 
 mcp = FastMCP("Seraph")
@@ -57,6 +60,40 @@ def search_at_version(query: str, version: str, limit: int = 5) -> dict:
 def search_history(query: str, limit: int = 5) -> dict:
     """Find relevant code across every indexed version, collapsing near-identical copies of the same symbol."""
     return _results(query, "HEAD", limit, True)
+
+
+@mcp.tool()
+def find_symbol(name: str, version: str = "HEAD") -> dict:
+    """Look up a function, class or method by name or path::symbol in one Git version."""
+    with _store() as store:
+        out = lookup_symbol(store, name, version)
+    for r in out["results"]:
+        r["text"] = r["text"][:4000]
+    return out
+
+
+@mcp.tool()
+def find_dependencies(
+    symbol: str, version: str = "HEAD", direction: str = "out", max_depth: int = 3, limit: int = 20
+) -> dict:
+    """Walk the call/import/inheritance graph from a symbol; direction is out, in, or both."""
+    if direction not in ("out", "in", "both"):
+        raise ValueError("direction must be out, in, or both")
+    if not 1 <= max_depth <= 6:
+        raise ValueError("max_depth must be between 1 and 6")
+    if not 1 <= limit <= 50:
+        raise ValueError("limit must be between 1 and 50")
+    with _store() as store:
+        return lookup_dependencies(store, symbol, version, direction, max_depth=max_depth, limit=limit)
+
+
+@mcp.tool()
+def compare_versions(from_version: str, to_version: str, limit: int = 50) -> dict:
+    """Diff symbols, dependencies and commits between two Git versions."""
+    if not 1 <= limit <= 200:
+        raise ValueError("limit must be between 1 and 200")
+    with _store() as store:
+        return compare_index(store, from_version, to_version, limit)
 
 
 @mcp.tool()

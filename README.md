@@ -149,7 +149,7 @@ Each `seraph.index.Chunk` (distinct from `seraph.types.Chunk`) has an `occurrenc
 
 ### MCP server (Morpheus and other agents)
 
-[Morpheus](https://github.com/projectakshith/morpheus) is our terminal coding agent, and its [`seraph-test`](https://github.com/projectakshith/morpheus/tree/seraph-test) branch is built around Seraph:
+[Morpheus](https://github.com/projectakshith/morpheus/tree/seraph-test) is our terminal coding agent, and its [`seraph-test`](https://github.com/projectakshith/morpheus/tree/seraph-test) branch is built around Seraph:
 
 - `/seraph setup|status|enable|disable` connects and checks the server.
 - The agent searches with Seraph first when it looks for code by behavior, and keeps grep for exact names.

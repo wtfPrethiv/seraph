@@ -11,3 +11,4 @@ build/
 experiments/runs/
 experiments/models/*.pkl
 experiments/*.log
+experiments/results/*_predictions/

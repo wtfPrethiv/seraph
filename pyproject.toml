@@ -36,8 +36,10 @@ api = [
     "google-genai>=1.20",
     "openai>=1.40",
 ]
+mcp = ["mcp>=1.2"]
 
 [project.scripts]
+seraph = "seraph.cli:main"
 seraph-eval = "seraph.evaluation.cli:app"
 
 [dependency-groups]

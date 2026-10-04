@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.seraph/
 .seraph_cache/
 *.egg-info/
 dist/

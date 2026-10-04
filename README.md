@@ -31,6 +31,52 @@ register_repo("myrepo", store, graph=graph, versions=versions)   # protocol impl
 search("where is the config parsed", repo="myrepo", top_k=10, include_history=True).to_dict()
 ```
 
+## Versioned index, CLI and MCP server
+
+`seraph.index.VersionedIndex` stores Python function/class chunks (plus file chunks for JavaScript, TypeScript and Go) per Git commit in SQLite. Files unchanged since an already-indexed parent commit are reused instead of re-parsed. Search currently uses the index's built-in lexical baseline; the `Pipeline` above is not yet connected to it.
+
+```bash
+uv sync
+seraph --repo /path/to/repo index --ref HEAD~1
+seraph --repo /path/to/repo index --ref HEAD
+seraph --repo /path/to/repo search "where is the input normalized" --ref HEAD
+seraph --repo /path/to/repo versions
+```
+
+The database defaults to `REPO/.seraph/index.sqlite`, which Git ignores; `--db PATH` moves it. `index` reports how many files it parsed and how many chunks it reused, so index a parent commit before its child to get reuse. `search --history` searches every indexed commit. Output is JSON with the commit, path, line range, code and score.
+
+```python
+from seraph import VersionedIndex
+
+with VersionedIndex("/path/to/repo") as index:
+    index.index_commit("HEAD")
+    chunks = list(index.iter_chunks("HEAD"))
+```
+
+Each `seraph.index.Chunk` (distinct from `seraph.types.Chunk`) has an `occurrence_id`, `commit`, `path`, `symbol`, line range, `text`, `language` and `content_hash`. Use `occurrence_id` to identify results, since the same text in two files or commits gets two occurrence IDs, and `content_hash` to cache embeddings across versions.
+
+### MCP server (Morpheus and other agents)
+
+```bash
+uv sync --extra mcp
+```
+
+Merge this entry into the existing `mcpServers` object of `~/.morpheus/config.json` (do not replace other servers):
+
+```json
+{
+  "mcpServers": {
+    "seraph": {
+      "command": "/absolute/path/to/python3",
+      "args": ["-m", "seraph.server"],
+      "env": {"SERAPH_REPO": "/absolute/path/to/repository"}
+    }
+  }
+}
+```
+
+The tools appear as `mcp_seraph_search_code`, `mcp_seraph_search_at_version` and `mcp_seraph_index_repository`. A search indexes the requested version on first use and returns path, commit, line range, snippet and score. `SERAPH_DB` optionally overrides the database path.
+
 ## Models: API first, local optional
 
 | Role | Default | Where it runs |

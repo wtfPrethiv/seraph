@@ -225,11 +225,14 @@ class CachedEmbedder:
         self.inner = inner
         self.cache_queries = cache_queries
         self.name = inner.name
-        self.revision = getattr(inner, "revision", "unknown")
         self.spec = spec
         self.dir = Path(cache_dir) / "embeddings" / inner.name
         self.dir.mkdir(parents=True, exist_ok=True)
         self._rows: dict[str, dict[str, tuple[Path, int]]] = {}
+
+    @property
+    def revision(self) -> str:
+        return getattr(self.inner, "revision", "unknown")
 
     @property
     def dim(self) -> int:

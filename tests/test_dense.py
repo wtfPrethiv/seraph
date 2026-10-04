@@ -68,3 +68,28 @@ def test_real_embedder_smoke():
     e = load_embedder("gte-modernbert")
     v = e.encode_queries(["reverse a linked list"])
     assert v.shape == (1, e.dim)
+
+
+def test_cache_keys_use_revision_known_after_model_load(tmp_path):
+    import json
+
+    import numpy as np
+
+    from seraph.retrieval.semantic import CachedEmbedder
+
+    class Lazy:
+        name = "lazy"
+        revision = "unknown"
+        dim = 2
+
+        def encode_documents(self, texts):
+            self.revision = "abc123"
+            return np.ones((len(texts), 2), dtype=np.float32)
+
+        def encode_queries(self, texts):
+            return self.encode_documents(texts)
+
+    cached = CachedEmbedder(Lazy(), tmp_path, cache_queries=True)
+    cached.encode_documents(["x", "y"])
+    keys = next((tmp_path / "embeddings" / "lazy").glob("d_*.keys.json"))
+    assert json.loads(keys.read_text())["salt"].startswith("d|abc123|")

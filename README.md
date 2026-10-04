@@ -1,6 +1,18 @@
 # seraph
 Seraph - a query-adaptive code intelligence engine that combines semantic, lexical, structural, dependency, and Git-aware retrieval to help coding agents understand large, evolving codebases.
 
+## Submission
+
+Team **floppydisk**, SRM Institute of Science and Technology · Samsung PRISM Generative AI Hackathon 2026, Theme 1: Agentic Code Intelligence
+
+| Item | Link |
+|---|---|
+| Demo video | [Google Drive](https://drive.google.com/drive/folders/1TbShN44FSyemdtEXjca11KWpaW50liuU?usp=sharing) |
+| Presentation | [docs/SRM_floppydisk_Submission.pptx](docs/SRM_floppydisk_Submission.pptx) ([PDF](docs/SRM_floppydisk_Submission.pdf)) |
+| AI usage disclosure | [docs/floppydisk_AI_Disclosure.docx](docs/floppydisk_AI_Disclosure.docx) |
+| AppsRetrieval result JSON | [release `PRISM_GENAI_HACKATHON_Y2026`](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026) |
+| Agent integration | [Morpheus, `seraph-test` branch](https://github.com/projectakshith/morpheus/tree/seraph-test) |
+
 ## For judges
 
 Everything below runs locally with no API keys. Commands are run from the repository root.
@@ -12,12 +24,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh          # only if uv is missing
 git clone https://github.com/wtfPrethiv/seraph && cd seraph
 uv sync --extra eval --extra cpu --extra mcp            # use --extra gpu instead of cpu on a CUDA machine
 source .venv/bin/activate
+# or, without uv: python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
 seraph-eval train-structural                            # trains the structural (γ) model on the train split, about a minute
 ```
 
 On macOS, if a run stops with `OMP: Error #15`, see the OpenMP note under [Limitations](#limitations).
 
-**2. P0: the screening score** (already attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0): nDCG@10 0.9770, MRR@10 0.9702)
+**2. P0: the screening score** (already attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026): nDCG@10 0.9770, MRR@10 0.9702)
 
 ```bash
 seraph-eval submit --final --out appsretrieval_results.json
@@ -62,7 +75,7 @@ Symbols are followed across commits through renames and moves, so history result
 
 ## Results
 
-CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored through `mteb.evaluate`. The submitted JSON is attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0).
+CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored through `mteb.evaluate`. The submitted JSON is attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026).
 
 Both rows are the same pipeline (BM25 + dense view + structural γ, weighted fusion 0.16 / 0.64 / 0.2) with a different embedder in the dense view:
 

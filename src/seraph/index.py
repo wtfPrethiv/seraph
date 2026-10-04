@@ -295,6 +295,21 @@ class VersionedIndex:
             );
         """)
 
+    def _nearest_indexed_ancestor(self, commit: str) -> str | None:
+        best: tuple[int, str] | None = None
+        for (candidate,) in self.conn.execute("SELECT commit_id FROM versions").fetchall():
+            ancestor = subprocess.run(
+                ["git", "-C", str(self.repo), "merge-base", "--is-ancestor", candidate, commit],
+                capture_output=True,
+                check=False,
+            )
+            if ancestor.returncode:
+                continue
+            distance = int(self._git("rev-list", "--count", f"{candidate}..{commit}").decode().strip())
+            if best is None or distance < best[0]:
+                best = (distance, candidate)
+        return best[1] if best else None
+
     def _git(self, *args: str) -> bytes:
         result = subprocess.run(
             ["git", "-C", str(self.repo), *args],
@@ -330,6 +345,8 @@ class VersionedIndex:
                 "SELECT 1 FROM versions WHERE commit_id=?", (parents[1],)
             ).fetchone():
                 base = parents[1]
+            else:
+                base = self._nearest_indexed_ancestor(commit)
 
         paths = self._git("ls-tree", "-r", "--name-only", commit).decode("utf-8", "replace").splitlines()
         eligible = {path for path in paths if Path(path).suffix.lower() in SUPPORTED_SUFFIXES}

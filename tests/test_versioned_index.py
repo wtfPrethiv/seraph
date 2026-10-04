@@ -90,3 +90,25 @@ def test_typescript_and_go_split_into_symbols():
     ]
     go = "package main\n\nfunc (s *Server) Start() error {\n\treturn nil\n}\n"
     assert [(c[0], c[1]) for c in _chunks("a.go", go)] == [("Server.Start", "method")]
+
+
+def test_reuses_nearest_indexed_ancestor_when_parent_is_not_indexed(tmp_path):
+    repo = tmp_path
+    git(repo, "init", "-q")
+    git(repo, "config", "user.email", "test@example.com")
+    git(repo, "config", "user.name", "Seraph Test")
+    (repo / "a.py").write_text("def a():\n    return 1\n")
+    (repo / "b.py").write_text("def b():\n    return 2\n")
+    git(repo, "add", ".")
+    git(repo, "commit", "-qm", "v1")
+    v1 = git(repo, "rev-parse", "HEAD")
+    for n in range(3):
+        (repo / "a.py").write_text(f"def a():\n    return {n + 10}\n")
+        git(repo, "commit", "-qam", f"edit {n}")
+    head = git(repo, "rev-parse", "HEAD")
+    with VersionedIndex(repo) as index:
+        index.index_commit(v1)
+        stats = index.index_commit(head)
+    assert stats.base_commit == v1
+    assert stats.parsed_files == 1
+    assert stats.reused_chunks == 1

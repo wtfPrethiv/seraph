@@ -303,7 +303,8 @@ The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota er
 
 ## Limitations
 
-- The Gemini embedder works but has not been benchmarked on the full corpus because of free-tier quota.
+
+- The Gemini embedder works but has not been benchmarked on the full corpus because of free tier quota.
 - The test split was run without reranking: 3,765 listwise Gemini calls do not fit the free tier, and no local reranker has been benchmarked yet.
 - On macOS, `torch` and `faiss-cpu` each ship their own OpenMP runtime and crash when both are loaded, so vector search uses exact numpy inner products there instead of FAISS (same results; milliseconds for 8,765 vectors).
 - Dense query decomposition was not ablated: the sub-queries have no cached embeddings. BM25 decomposition is in `b7_bm25_decomp`.

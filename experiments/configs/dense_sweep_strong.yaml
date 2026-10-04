@@ -1,0 +1,8 @@
+base: b2_dense.yaml
+splits: [dev_stdin, dev]
+models:
+  - embeddinggemma-300m
+  - bge-code-v1
+  - qwen3-emb-4b
+overrides:
+  allow_local_models: true

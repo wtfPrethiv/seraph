@@ -92,6 +92,36 @@ EMBEDDERS: dict[str, ModelSpec] = {
             batch_size=8,
             params_m=600,
         ),
+        ModelSpec(
+            name="qwen3-emb-4b",
+            hf_id="Qwen/Qwen3-Embedding-4B",
+            query_prefix=_QWEN_EMB_INSTRUCT,
+            max_len=1024,
+            batch_size=4,
+            params_m=4000,
+        ),
+        ModelSpec(
+            name="bge-code-v1",
+            hf_id="BAAI/bge-code-v1",
+            query_prefix=(
+                "<instruct>Given a code contest problem description, retrieve relevant code "
+                "that can help solve the problem.\n<query>"
+            ),
+            trust_remote_code=True,
+            max_len=1024,
+            batch_size=8,
+            params_m=1500,
+        ),
+        ModelSpec(
+            name="embeddinggemma-300m",
+            hf_id="google/embeddinggemma-300m",
+            query_prefix="task: code retrieval | query: ",
+            doc_prefix="title: none | text: ",
+            max_len=1024,
+            dtype="float32",
+            batch_size=16,
+            params_m=300,
+        ),
     ]
 }
 
@@ -233,6 +263,8 @@ def resolve_device(device: str) -> str:
     try:
         import torch
 
-        return "cuda" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            return "cuda"
+        return "mps" if torch.backends.mps.is_available() else "cpu"
     except ImportError:
         return "cpu"

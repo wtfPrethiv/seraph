@@ -130,7 +130,8 @@ def sweep(spec: str = "experiments/configs/dense_sweep.yaml", only: list[str] = 
         if only and model not in only:
             continue
         for split in s["splits"]:
-            cfg = load_config(base, {"name": f"b2_dense_{model}", "retrieval": {"dense_model": model}})
+            overrides = {**s.get("overrides", {}), "name": f"b2_dense_{model}", "retrieval": {"dense_model": model}}
+            cfg = load_config(base, overrides)
             try:
                 m = run_experiment(cfg, split=split)["metrics"]
                 typer.echo(f"{model:18s} {split:10s} ndcg@10={m['ndcg@10']:.4f} r@100={m['recall@100']:.4f}")

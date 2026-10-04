@@ -44,7 +44,7 @@ class STEmbedder:
         self.spec = spec
         self.name = spec.name
         device = resolve_device(device)
-        kwargs = {"dtype": _torch_dtype(spec.dtype)} if device == "cuda" else {}
+        kwargs = {"dtype": _torch_dtype(spec.dtype)} if device in ("cuda", "mps") else {}
         self.model = SentenceTransformer(
             spec.hf_id,
             revision=spec.revision,

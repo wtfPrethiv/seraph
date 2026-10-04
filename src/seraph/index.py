@@ -261,6 +261,21 @@ class VersionedIndex:
             CREATE INDEX IF NOT EXISTS occurrences_commit ON occurrences(commit_id);
             CREATE INDEX IF NOT EXISTS occurrences_path ON occurrences(commit_id, path);
             CREATE INDEX IF NOT EXISTS occurrences_hash ON occurrences(content_hash);
+            CREATE TABLE IF NOT EXISTS refs (
+                commit_id TEXT NOT NULL REFERENCES versions(commit_id),
+                path TEXT NOT NULL,
+                symbol TEXT,
+                kind TEXT NOT NULL,
+                target TEXT NOT NULL,
+                local TEXT
+            );
+            CREATE INDEX IF NOT EXISTS refs_commit ON refs(commit_id, path);
+            -- Per-commit data added after a commit may first have been indexed (backfilled on demand).
+            CREATE TABLE IF NOT EXISTS derived (
+                commit_id TEXT NOT NULL REFERENCES versions(commit_id),
+                feature TEXT NOT NULL,
+                PRIMARY KEY (commit_id, feature)
+            );
         """)
 
     def _git(self, *args: str) -> bytes:
@@ -308,12 +323,18 @@ class VersionedIndex:
             changed = eligible.intersection(diff)
 
         parsed_files = 0
+        if base:
+            self._ensure_refs(base)
         with self.conn:
             self.conn.execute(
                 "INSERT INTO versions(commit_id, base_commit, indexed_at) VALUES (?, ?, ?)",
                 (commit, base, datetime.now(UTC).isoformat()),
             )
             if base:
+                for row in self.conn.execute("SELECT * FROM refs WHERE commit_id=?", (base,)).fetchall():
+                    if row["path"] in eligible and row["path"] not in changed:
+                        self.conn.execute("INSERT INTO refs VALUES (?, ?, ?, ?, ?, ?)",
+                                          (commit, *tuple(row)[1:]))
                 rows = self.conn.execute(
                     "SELECT path, symbol, kind, start_line, end_line, content_hash "
                     "FROM occurrences WHERE commit_id=?", (base,)
@@ -337,7 +358,9 @@ class VersionedIndex:
                 text = raw.decode("utf-8", "replace")
                 language = _language(path)
                 parsed_files += 1
-                for symbol, kind, start, end, part in _chunks(path, text):
+                spans = _chunks(path, text)
+                self._insert_refs(commit, path, text, spans)
+                for symbol, kind, start, end, part in spans:
                     # The same source text can mean different things in different languages.
                     content_hash = _digest(language + "\0" + part)
                     occurrence_id = _digest("\0".join((commit, path, symbol or "", str(start), content_hash)))
@@ -349,9 +372,46 @@ class VersionedIndex:
                         "INSERT INTO occurrences VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (occurrence_id, commit, path, symbol, kind, start, end, content_hash),
                     )
+            self.conn.execute("INSERT INTO derived VALUES (?, 'refs')", (commit,))
 
         total = self.conn.execute("SELECT COUNT(*) FROM occurrences WHERE commit_id=?", (commit,)).fetchone()[0]
         return IndexStats(commit, base, parsed_files, reused, total)
+
+    def _insert_refs(self, commit: str, path: str, text: str, spans) -> None:
+        from seraph.graph.builder import extract_refs
+
+        self.conn.executemany(
+            "INSERT INTO refs VALUES (?, ?, ?, ?, ?, ?)",
+            [(commit, path, r.symbol, str(r.kind), r.target, r.local) for r in extract_refs(path, text, spans)],
+        )
+
+    def _has(self, commit: str, feature: str) -> bool:
+        return bool(self.conn.execute(
+            "SELECT 1 FROM derived WHERE commit_id=? AND feature=?", (commit, feature)
+        ).fetchone())
+
+    def _ensure_refs(self, commit: str) -> None:
+        """Extract references for a commit indexed before the `refs` table existed."""
+        if self._has(commit, "refs"):
+            return
+        paths = self.conn.execute("SELECT DISTINCT path FROM occurrences WHERE commit_id=?", (commit,)).fetchall()
+        with self.conn:
+            self.conn.execute("DELETE FROM refs WHERE commit_id=?", (commit,))
+            for (path,) in paths:
+                text = self._git("show", f"{commit}:{path}").decode("utf-8", "replace")
+                self._insert_refs(commit, path, text, _chunks(path, text))
+            self.conn.execute("INSERT INTO derived VALUES (?, 'refs')", (commit,))
+
+    def iter_refs(self, ref: str = "HEAD"):
+        """`(path, graph.builder.Ref)` for every reference extracted from an indexed commit."""
+        from seraph.graph.builder import Ref
+
+        commit = self.resolve(ref)
+        if not self.conn.execute("SELECT 1 FROM versions WHERE commit_id=?", (commit,)).fetchone():
+            raise ValueError(f"Version is not indexed: {ref} ({commit[:12]})")
+        self._ensure_refs(commit)
+        for row in self.conn.execute("SELECT * FROM refs WHERE commit_id=? ORDER BY rowid", (commit,)):
+            yield row["path"], Ref(row["symbol"], row["kind"], row["target"], row["local"])
 
     def iter_chunks(self, ref: str = "HEAD", include_history: bool = False) -> Iterator[Chunk]:
         commit = self.resolve(ref)

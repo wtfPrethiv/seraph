@@ -92,6 +92,18 @@ def service_config() -> SeraphConfig:
 
 
 _PIPELINES: dict[tuple, tuple[Any, IndexChunkStore]] = {}
+_GRAPHS: dict[tuple[str, str], Any] = {}
+
+
+def repo_graph(index: vindex.VersionedIndex, ref: str = "HEAD"):
+    """The code graph of an indexed commit (indexing it first if needed); a commit's graph never changes."""
+    from seraph.graph.builder import build_graph
+
+    commit = index.index_commit(ref).commit
+    key = (str(index.db_path), commit)
+    if key not in _GRAPHS:
+        _GRAPHS[key] = build_graph(index.iter_chunks(commit), index.iter_refs(commit))
+    return _GRAPHS[key]
 
 
 def _pipeline(index: vindex.VersionedIndex, commit: str, include_history: bool, cfg: SeraphConfig):
@@ -101,7 +113,11 @@ def _pipeline(index: vindex.VersionedIndex, commit: str, include_history: bool, 
     key = (str(index.repo), scope, include_history, hashlib.sha1(cfg.model_dump_json().encode()).hexdigest())
     if key not in _PIPELINES:
         store = IndexChunkStore.from_index(index, commit, include_history)
-        pipe = Pipeline.from_config(cfg, store, HISTORY if include_history else "HEAD") if len(store) else None
+        pipe = None
+        if len(store):
+            version = HISTORY if include_history else "HEAD"
+            graph = repo_graph(index, commit) if cfg.retrieval.use_graph_expansion else None
+            pipe = Pipeline.from_config(cfg, store, version, graph=graph)
         _PIPELINES[key] = (pipe, store)
     return _PIPELINES[key]
 

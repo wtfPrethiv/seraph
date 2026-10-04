@@ -59,6 +59,8 @@ search("where is the config parsed", repo="myrepo", top_k=10, include_history=Tr
 
 `seraph.index.VersionedIndex` stores symbol-level chunks per Git commit in SQLite: functions and classes for Python, and functions, classes, methods, interfaces and types for TypeScript, JavaScript and Go (tree-sitter). Files unchanged since an already-indexed parent commit are reused instead of re-parsed.
 
+Indexing also records each file's calls, imports, base classes and name references. `seraph.service.repo_graph(index, ref)` resolves them across files into a `CodeGraph` whose nodes are `path::symbol` (and files by path), with `calls`, `imports`, `inherits`, `references` and `defines` edges. Python imports resolve through packages and relative imports, TypeScript/JavaScript through relative paths, and Go through package directories; calls into the standard library or third-party packages are left out. A call on an unknown receiver (`obj.save()`) links only when exactly one method has that name. Set `retrieval.use_graph_expansion: true` to add the graph (δ) view to repository search.
+
 `seraph.service` connects the two halves. `IndexChunkStore` exposes an index snapshot as a `ChunkStore`, and `search_index()` ranks it with the `Pipeline`, caching one built pipeline per repo, commit set and config. The CLI and MCP server both go through it. By default the pipeline is BM25 with the code-aware tokenizer and makes no API calls; set `SERAPH_CONFIG=configs/service_hybrid.yaml` to add Gemini embeddings. `seraph search --engine baseline` runs the index's original keyword search for comparison. Until the index tracks lineage, chunks are linked across commits by `path::symbol`.
 
 ```bash

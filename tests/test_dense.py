@@ -29,6 +29,25 @@ def test_dense_retriever_and_cache(tmp_path):
     assert r.doc_vectors([chunks[1].chunk_hash]).shape == (1, 64)
 
 
+def test_cache_embeds_only_new_texts(tmp_path):
+    class Counting(FakeEmbedder):
+        def __init__(self):
+            super().__init__()
+            self.seen: list[str] = []
+
+        def encode_documents(self, texts):
+            self.seen += list(texts)
+            return self._enc(texts)
+
+    inner = Counting()
+    emb = CachedEmbedder(inner, tmp_path)
+    v1 = emb.encode_documents(["def a(): pass", "def b(): pass"])
+    v2 = emb.encode_documents(["def a(): pass", "def b(): return 1", "def b(): pass"])
+    assert inner.seen == ["def a(): pass", "def b(): pass", "def b(): return 1"]
+    assert np.allclose(v2[0], v1[0]) and np.allclose(v2[2], v1[1])
+    assert np.allclose(v2[1], FakeEmbedder()._enc(["def b(): return 1"])[0])
+
+
 def test_local_models_disabled_guard(tmp_path):
     from seraph.config import EMBEDDERS
     from seraph.retrieval.reranker import load_reranker

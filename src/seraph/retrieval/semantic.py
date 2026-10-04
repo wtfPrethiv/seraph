@@ -288,16 +288,22 @@ class CachedEmbedder:
         return np.stack(rows)
 
     def _cached(self, kind: str, texts: Sequence[str], fn) -> np.ndarray:
+        """Only texts missing from every cached matrix are encoded, so a new version of a
+        repository re-embeds just its changed chunks."""
         path = self._key(kind, texts)
         if path.exists():
             self._write_keys(path, kind, texts)
             return np.load(path)
+        index = self._row_index(kind)
+        missing = list(dict.fromkeys(t for t, i in zip(texts, self._ids(texts), strict=True) if i not in index))
+        if missing:
+            if len(missing) < len(texts):
+                log.info("embedding %d new of %d %s texts", len(missing), len(texts), kind)
+            new_path = self._key(kind, missing)
+            np.save(new_path, fn(missing))
+            self._write_keys(new_path, kind, missing)
         mat = self._assemble(kind, texts)
-        if mat is not None:
-            return mat
-        mat = fn(texts)
-        np.save(path, mat)
-        self._write_keys(path, kind, texts)
+        assert mat is not None
         return mat
 
     def encode_queries(self, texts: Sequence[str]) -> np.ndarray:

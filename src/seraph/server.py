@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from dataclasses import asdict
 from pathlib import Path
 
@@ -62,7 +63,9 @@ def search_history(query: str, limit: int = 5) -> dict:
 def index_repository(version: str = "HEAD") -> dict:
     """Index one Git version and report changed-file work and reused chunks."""
     with _store() as store:
-        return asdict(store.index_commit(version))
+        start = time.perf_counter()
+        stats = asdict(store.index_commit(version))
+    return {**stats, "ms": round((time.perf_counter() - start) * 1000, 1)}
 
 
 def main() -> None:

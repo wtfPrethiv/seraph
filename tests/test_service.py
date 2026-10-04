@@ -63,3 +63,17 @@ def test_search_index_uses_pipeline_and_versions(repo):
         hist = search_index(index, "json load config", "HEAD", 5, include_history=True, cfg=SeraphConfig())
         assert {r["commit"] for r in hist["results"]} == {old, new}
         assert search_index(index, "   ", "HEAD", 3, cfg=SeraphConfig())["results"] == []
+
+
+def test_history_search_collapses_identical_code_across_versions(repo):
+    path, old, new = repo
+    with VersionedIndex(path, path / "idx.sqlite") as index:
+        index.index_commit(old)
+        index.index_commit(new)
+        out = search_index(index, "normalize input text", "HEAD", 5, include_history=True, cfg=SeraphConfig())
+        changed = search_index(index, "parse config yaml json", "HEAD", 5, include_history=True, cfg=SeraphConfig())
+    normalize = [r for r in out["results"] if r["symbol"] == "normalize_input"]
+    assert len(normalize) == 1
+    assert sorted(normalize[0]["versions"]) == sorted([old, new])
+    parse = [r for r in changed["results"] if r["symbol"] == "parse_config"]
+    assert {r["commit"] for r in parse} == {old, new}

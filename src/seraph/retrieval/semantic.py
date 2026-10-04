@@ -134,13 +134,70 @@ def _commit_hash(model) -> str:
     return getattr(getattr(model, "config", None), "_commit_hash", None) or "unknown"
 
 
-def load_embedder(name: str, device: str = "auto") -> Embedder:
-    spec = EMBEDDERS[name]
+def _load_local(spec: ModelSpec, device: str) -> Embedder:
     if spec.trust_remote_code:
         _transformers_compat()
     if spec.backend == "st":
         return STEmbedder(spec, device)
     return HFEmbedder(spec, device)
+
+
+def _hf_cached_revision(spec: ModelSpec) -> str | None:
+    """Commit hash of an already-downloaded model, read from the HF cache without loading it."""
+    import os
+
+    home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+    ref = home / f"models--{spec.hf_id.replace('/', '--')}" / "refs" / spec.revision
+    return ref.read_text().strip() if ref.exists() else None
+
+
+class LazyLocalEmbedder:
+    """Defers loading a local model until a text is not found in the embedding cache."""
+
+    def __init__(self, spec: ModelSpec, device: str = "auto") -> None:
+        self.spec = spec
+        self.name = spec.name
+        self.device = device
+        self._model: Embedder | None = None
+        self.revision = _hf_cached_revision(spec) or "unknown"
+
+    @property
+    def model(self) -> Embedder:
+        if self._model is None:
+            log.info("loading local embedder %s", self.spec.hf_id)
+            self._model = _load_local(self.spec, self.device)
+            self.revision = getattr(self._model, "revision", self.revision)
+        return self._model
+
+    @property
+    def dim(self) -> int:
+        return self.model.dim
+
+    def encode_queries(self, texts: Sequence[str]) -> np.ndarray:
+        return self.model.encode_queries(texts)
+
+    def encode_documents(self, texts: Sequence[str]) -> np.ndarray:
+        return self.model.encode_documents(texts)
+
+
+def load_embedder(
+    name: str,
+    device: str = "auto",
+    cache_dir: str | Path = ".seraph_cache",
+    fallback: str | None = None,
+) -> Embedder:
+    """API models first; `fallback` (usually local) is used only when the API key is missing."""
+    import os
+
+    spec = EMBEDDERS[name]
+    if spec.backend == "gemini_embed":
+        from seraph.backends.gemini import GeminiEmbedder
+
+        if fallback and not os.environ.get(spec.options.get("api_key_env", "GEMINI_API_KEY")):
+            log.warning("no API key for %s; falling back to %s", name, fallback)
+            return load_embedder(fallback, device, cache_dir)
+        return GeminiEmbedder(spec, cache_dir)
+    return LazyLocalEmbedder(spec, device)
 
 
 class CachedEmbedder:
@@ -156,11 +213,14 @@ class CachedEmbedder:
         self.inner = inner
         self.cache_queries = cache_queries
         self.name = inner.name
-        self.dim = inner.dim
         self.revision = getattr(inner, "revision", "unknown")
         self.spec = spec
         self.dir = Path(cache_dir) / "embeddings" / inner.name
         self.dir.mkdir(parents=True, exist_ok=True)
+
+    @property
+    def dim(self) -> int:
+        return self.inner.dim
 
     def _key(self, kind: str, texts: Sequence[str]) -> Path:
         h = hashlib.sha1()

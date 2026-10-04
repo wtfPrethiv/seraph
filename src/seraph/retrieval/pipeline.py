@@ -38,13 +38,14 @@ class Pipeline:
         if self._embedder is None:
             from seraph.retrieval.semantic import CachedEmbedder, load_embedder
 
-            name = self.cfg.retrieval.dense_model
-            self._embedder = CachedEmbedder(
-                load_embedder(name, self.cfg.device),
-                self.cfg.cache_path,
-                EMBEDDERS[name],
-                cache_queries=self.cfg.cache_query_embeddings,
-            )
+            r = self.cfg.retrieval
+            inner = load_embedder(r.dense_model, self.cfg.device, self.cfg.cache_path, r.dense_fallback)
+            if EMBEDDERS[inner.name].is_api:
+                self._embedder = inner  # API backend caches per text itself
+            else:
+                self._embedder = CachedEmbedder(
+                    inner, self.cfg.cache_path, EMBEDDERS[inner.name], self.cfg.cache_query_embeddings
+                )
         return self._embedder
 
     def build(self) -> None:
@@ -92,7 +93,9 @@ class Pipeline:
             from seraph.retrieval.reranker import load_reranker
 
             r = self.cfg.retrieval
-            self._reranker = load_reranker(r.reranker_model, self.cfg.device, self.cfg.cache_path, r.rerank_blend)
+            self._reranker = load_reranker(
+                r.reranker_model, self.cfg.device, self.cfg.cache_path, r.rerank_blend, r.reranker_fallback
+            )
         return self._reranker
 
     def rerank(self, queries: Sequence[AnalyzedQuery], fused: list[list[ScoredChunk]]) -> list[list[ScoredChunk]]:

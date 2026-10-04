@@ -13,7 +13,9 @@ class ModelSpec(BaseModel):
     name: str
     hf_id: str
     revision: str = "main"
-    backend: Literal["st", "hf", "codet5p", "cross_encoder", "causal_reranker"] = "st"
+    backend: Literal[
+        "st", "hf", "codet5p", "cross_encoder", "causal_reranker", "gemini_embed", "gemini_rerank"
+    ] = "st"
     pooling: Literal["mean", "cls", "last"] = "mean"
     query_prefix: str = ""
     doc_prefix: str = ""
@@ -22,6 +24,11 @@ class ModelSpec(BaseModel):
     trust_remote_code: bool = False
     batch_size: int = 32
     params_m: int = 0
+    options: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def is_api(self) -> bool:
+        return self.backend.startswith("gemini")
 
 
 _QWEN_EMB_INSTRUCT = (
@@ -32,6 +39,12 @@ _QWEN_EMB_INSTRUCT = (
 EMBEDDERS: dict[str, ModelSpec] = {
     m.name: m
     for m in [
+        ModelSpec(
+            name="gemini-embedding-001",
+            hf_id="gemini-embedding-001",
+            backend="gemini_embed",
+            options={"output_dim": 768, "query_task": "CODE_RETRIEVAL_QUERY", "doc_task": "RETRIEVAL_DOCUMENT", "rpm": 90, "batch": 100},
+        ),
         ModelSpec(name="codebert", hf_id="microsoft/codebert-base", backend="hf", params_m=125),
         ModelSpec(name="graphcodebert", hf_id="microsoft/graphcodebert-base", backend="hf", params_m=125),
         ModelSpec(name="unixcoder", hf_id="microsoft/unixcoder-base", backend="hf", params_m=125),
@@ -86,6 +99,18 @@ RERANKERS: dict[str, ModelSpec] = {
     m.name: m
     for m in [
         ModelSpec(
+            name="gemini-flash-lite-listwise",
+            hf_id="gemini-2.5-flash-lite",
+            backend="gemini_rerank",
+            options={"window": 20, "rpm": 14, "doc_chars": 1200, "query_chars": 3000},
+        ),
+        ModelSpec(
+            name="gemini-flash-listwise",
+            hf_id="gemini-2.5-flash",
+            backend="gemini_rerank",
+            options={"window": 20, "rpm": 9, "doc_chars": 1200, "query_chars": 3000},
+        ),
+        ModelSpec(
             name="bge-reranker-v2-m3",
             hf_id="BAAI/bge-reranker-v2-m3",
             backend="cross_encoder",
@@ -121,7 +146,8 @@ class RetrievalConfig(BaseModel):
     bm25_b: float = 0.75
     bm25_stem: bool = True
     use_dense: bool = False
-    dense_model: str = "qwen3-emb-0.6b"
+    dense_model: str = "gemini-embedding-001"
+    dense_fallback: str | None = None  # e.g. qwen3-emb-0.6b to fall back to a local model
     fusion: Literal["none", "rrf", "weighted", "adaptive"] = "rrf"
     rrf_k: int = 60
     fusion_norm: Literal["minmax", "zscore"] = "minmax"
@@ -135,8 +161,9 @@ class RetrievalConfig(BaseModel):
         }
     )
     use_reranker: bool = False
-    reranker_model: str = "bge-reranker-v2-m3"
-    rerank_depth: int = 100
+    reranker_model: str = "gemini-flash-lite-listwise"
+    reranker_fallback: str | None = None
+    rerank_depth: int = 20
     rerank_blend: float = 0.0
     use_query_analyzer: bool = False
     analyzer: Literal["rules", "llm"] = "rules"
@@ -155,9 +182,11 @@ class RetrievalConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    base_url: str = "http://localhost:11434/v1"
-    model: str = "qwen2.5-coder:7b"
-    api_key_env: str = "OPENAI_API_KEY"
+    """Any OpenAI-compatible endpoint; defaults to Gemini's."""
+
+    base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    model: str = "gemini-2.5-flash-lite"
+    api_key_env: str = "GEMINI_API_KEY"
     temperature: float = 0.0
 
 

@@ -32,6 +32,10 @@ eval = [
     "pillow>=12.3.0",
 ]
 llm = ["openai>=1.40"]
+api = [
+    "google-genai>=1.20",
+    "openai>=1.40",
+]
 
 [project.scripts]
 seraph-eval = "seraph.evaluation.cli:app"
@@ -68,5 +72,5 @@ ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not gpu and not network'"
 markers = ["gpu: requires CUDA and model downloads", "network: requires network access"]

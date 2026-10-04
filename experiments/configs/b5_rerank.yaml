@@ -1,0 +1,6 @@
+extends: b3_hybrid_weighted.yaml
+name: b5_rerank
+retrieval:
+  use_reranker: true
+  reranker_model: bge-reranker-v2-m3
+  rerank_depth: 100

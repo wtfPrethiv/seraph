@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
 import os
+from dataclasses import asdict
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
 from .index import VersionedIndex
-
 
 mcp = FastMCP("Seraph")
 

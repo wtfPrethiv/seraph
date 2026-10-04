@@ -8,17 +8,16 @@ identical text appearing in different files or commits.
 from __future__ import annotations
 
 import ast
-from collections import Counter
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import hashlib
 import math
-from pathlib import Path
 import re
 import sqlite3
 import subprocess
-from typing import Iterator
-
+from collections import Counter
+from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
 
 SUPPORTED_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".go"}
 MAX_FILE_BYTES = 1_000_000
@@ -116,7 +115,7 @@ class VersionedIndex:
     def close(self) -> None:
         self.conn.close()
 
-    def __enter__(self) -> "VersionedIndex":
+    def __enter__(self) -> VersionedIndex:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -153,8 +152,7 @@ class VersionedIndex:
     def _git(self, *args: str) -> bytes:
         result = subprocess.run(
             ["git", "-C", str(self.repo), *args],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
         )
         if result.returncode:
@@ -199,7 +197,7 @@ class VersionedIndex:
         with self.conn:
             self.conn.execute(
                 "INSERT INTO versions(commit_id, base_commit, indexed_at) VALUES (?, ?, ?)",
-                (commit, base, datetime.now(timezone.utc).isoformat()),
+                (commit, base, datetime.now(UTC).isoformat()),
             )
             if base:
                 rows = self.conn.execute(
@@ -272,7 +270,7 @@ class VersionedIndex:
         avg_length = sum(lengths) / len(lengths) or 1.0
         document_frequency = Counter(term for doc in documents for term in doc)
         hits: list[SearchHit] = []
-        for chunk, terms, length in zip(chunks, documents, lengths):
+        for chunk, terms, length in zip(chunks, documents, lengths, strict=True):
             score = 0.0
             for term in set(query_terms):
                 frequency = terms[term]

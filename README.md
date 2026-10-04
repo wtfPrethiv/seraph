@@ -12,6 +12,9 @@ Team **floppydisk**, SRM Institute of Science and Technology · Samsung PRISM Ge
 | AI usage disclosure | [docs/floppydisk_AI_Disclosure.docx](docs/floppydisk_AI_Disclosure.docx) |
 | AppsRetrieval result JSON | [release `PRISM_GENAI_HACKATHON_Y2026`](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026) |
 | Agent integration | [Morpheus, `seraph-test` branch](https://github.com/projectakshith/morpheus/tree/seraph-test) |
+
+## Architecture diagram
+
 <img width="1822" height="1470" alt="Drawing 2026-10-04 22 53 23 excalidraw" src="https://github.com/user-attachments/assets/c5d717e2-6bf1-4298-a063-b4447efad135" />
 
 ## For judges

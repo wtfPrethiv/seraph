@@ -1,0 +1,5 @@
+extends: b1_bm25.yaml
+name: b7_bm25_decomp
+retrieval:
+  use_query_analyzer: true
+  use_decomposition: true

@@ -1,35 +1,35 @@
 {
-  "name": "b1_bm25",
+  "name": "b7_bm25_decomp",
   "split": "dev",
   "n_queries": 1000,
   "metrics": {
-    "ndcg@1": 0.292,
-    "mrr@1": 0.292,
-    "recall@1": 0.292,
-    "ndcg@10": 0.3713948948203393,
-    "mrr@10": 0.34412301587301586,
-    "recall@10": 0.458,
-    "ndcg@100": 0.4032684047830592,
-    "mrr@100": 0.3502173266864185,
+    "ndcg@1": 0.266,
+    "mrr@1": 0.266,
+    "recall@1": 0.266,
+    "ndcg@10": 0.34869163971342154,
+    "mrr@10": 0.3195059523809524,
+    "recall@10": 0.442,
+    "ndcg@100": 0.38420633584281705,
+    "mrr@100": 0.32638501085907556,
     "recall@100": 0.612,
-    "latency_p50_ms": 0.7267703126672131,
-    "latency_p95_ms": 1.1833687503894907,
-    "latency_mean_ms": 0.8143557000148576
+    "latency_p50_ms": 3.5023968753193913,
+    "latency_p95_ms": 5.70316562516382,
+    "latency_mean_ms": 4.0088324000826105
   },
-  "index_seconds": 0.8998621000209823,
+  "index_seconds": 0.8758148000051733,
   "meta": {
     "git_sha": "b04d4d5",
-    "config_hash": "f4453a9e29",
+    "config_hash": "fa2f955d53",
     "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
     "models": {
       "lexical": "lexical"
     },
     "seed": 42,
     "python": "3.12.15",
-    "timestamp": "2026-10-04T09:47:47"
+    "timestamp": "2026-10-04T09:47:45"
   },
   "config": {
-    "name": "b1_bm25",
+    "name": "b7_bm25_decomp",
     "seed": 42,
     "device": "auto",
     "cache_dir": ".seraph_cache",
@@ -58,9 +58,9 @@
       "reranker_fallback": null,
       "rerank_depth": 20,
       "rerank_blend": 0.0,
-      "use_query_analyzer": false,
+      "use_query_analyzer": true,
       "analyzer": "rules",
-      "use_decomposition": false,
+      "use_decomposition": true,
       "adaptive_weights": "off",
       "weight_model_path": null,
       "use_structural": false,

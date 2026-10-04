@@ -12,27 +12,28 @@
     "ndcg@100": 0.12165577691007604,
     "mrr@100": 0.08292217587119946,
     "recall@100": 0.2844311377245509,
-    "latency_p50_ms": 2.426923437496953,
-    "latency_p95_ms": 3.5149718748925807,
-    "latency_mean_ms": 2.5778323353385315
+    "latency_p50_ms": 1.0515687499719206,
+    "latency_p95_ms": 1.2154234373156214,
+    "latency_mean_ms": 1.0560317365640863
   },
-  "index_seconds": 1.3754794999986188,
+  "index_seconds": 0.8696534000046086,
   "meta": {
-    "git_sha": "7ec82e1",
-    "config_hash": "1c110579cf",
+    "git_sha": "b04d4d5",
+    "config_hash": "f4453a9e29",
     "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
     "models": {
       "lexical": "lexical"
     },
     "seed": 42,
     "python": "3.12.15",
-    "timestamp": "2026-10-03T23:19:45"
+    "timestamp": "2026-10-04T09:46:30"
   },
   "config": {
     "name": "b1_bm25",
     "seed": 42,
     "device": "auto",
     "cache_dir": ".seraph_cache",
+    "cache_query_embeddings": true,
     "retrieval": {
       "first_stage_k": 100,
       "use_bm25": true,
@@ -40,7 +41,8 @@
       "bm25_b": 0.9,
       "bm25_stem": false,
       "use_dense": false,
-      "dense_model": "jina-code-v2",
+      "dense_model": "qwen3-emb-0.6b",
+      "dense_fallback": null,
       "fusion": "none",
       "rrf_k": 60,
       "fusion_norm": "minmax",
@@ -52,8 +54,9 @@
         "evolution": 0.0
       },
       "use_reranker": false,
-      "reranker_model": "bge-reranker-v2-m3",
-      "rerank_depth": 100,
+      "reranker_model": "gemini-flash-lite-listwise",
+      "reranker_fallback": null,
+      "rerank_depth": 20,
       "rerank_blend": 0.0,
       "use_query_analyzer": false,
       "analyzer": "rules",
@@ -71,9 +74,9 @@
       "mmr_lambda": 0.7
     },
     "llm": {
-      "base_url": "http://localhost:11434/v1",
-      "model": "qwen2.5-coder:7b",
-      "api_key_env": "OPENAI_API_KEY",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "model": "gemini-3.5-flash-lite",
+      "api_key_env": "GEMINI_API_KEY",
       "temperature": 0.0
     }
   }

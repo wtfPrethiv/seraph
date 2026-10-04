@@ -41,6 +41,22 @@ def test_public_search_response_shape():
         search("x", repo="missing")
 
 
+def test_analyzer_and_decomposition_in_pipeline():
+    p = make_pipeline(
+        fusion="weighted",
+        static_weights={"lexical": 0.5, "semantic": 0.5},
+        use_query_analyzer=True,
+        use_decomposition=True,
+    )
+    q = "read the file at path; then parse config with strict validation"
+    resp = p.search(q, top_k=3)
+    assert resp.query_type == "SEMANTIC"
+    assert len(resp.sub_queries) == 3  # full + two clauses
+    assert {"cfg.parse_config", "io.read_file"} <= {r.symbol for r in resp.results}
+    batch = p.search_batch([AnalyzedQuery.plain(q, qid="x")], 3)[0]
+    assert [h.chunk.symbol for h in batch] == [r.symbol for r in resp.results]
+
+
 class FlipReranker:
     """Reverses the candidate order; checks the rerank stage is applied and the tail kept."""
 

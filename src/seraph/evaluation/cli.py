@@ -155,6 +155,20 @@ def tune_fusion(config: str = "experiments/configs/b3_hybrid_weighted.yaml", spl
         typer.echo(f"ndcg@10={ndcg:.4f} r@100={r100:.4f} {desc}")
 
 
+@app.command("train-classifier")
+def train_classifier(data: str, cache_dir: str = ".seraph_cache") -> None:
+    """Train the learned query-type classifier from JSONL lines {"query": ..., "type": ...}."""
+    from pathlib import Path
+
+    from seraph.query.classifier import LearnedClassifier
+
+    rows = [json.loads(line) for line in Path(data).read_text(encoding="utf-8").splitlines() if line.strip()]
+    clf = LearnedClassifier().fit([r["query"] for r in rows], [r["type"] for r in rows])
+    out = Path(cache_dir) / "query_classifier.pkl"
+    clf.save(out)
+    typer.echo(f"trained on {len(rows)} queries -> {out}")
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

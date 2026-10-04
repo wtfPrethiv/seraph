@@ -7,9 +7,9 @@ from collections.abc import Sequence
 
 from seraph.config import EMBEDDERS, SeraphConfig
 from seraph.protocols import ChunkStore, Embedder, Reranker, Retriever
-from seraph.retrieval.fusion import fuse
+from seraph.retrieval.fusion import fuse, rrf
 from seraph.retrieval.lexical import LexicalRetriever
-from seraph.types import AnalyzedQuery, Chunk, ScoredChunk, SearchResponse, SearchResult
+from seraph.types import AnalyzedQuery, Chunk, ScoredChunk, SearchResponse, SearchResult, SubQuery
 
 
 class Pipeline:
@@ -26,6 +26,7 @@ class Pipeline:
         self.version = version
         self._embedder = embedder
         self._reranker = reranker
+        self._analyzer = None
         self.views: dict[str, Retriever] = {}
 
     @classmethod
@@ -69,10 +70,54 @@ class Pipeline:
             meta["rerank"] = f"{self._reranker.name}@{getattr(self._reranker, 'revision', 'unknown')}"
         return meta
 
+    @property
+    def analyzer(self):
+        if self._analyzer is None:
+            from seraph.query.analyzer import build_analyzer
+
+            self._analyzer = build_analyzer(self.cfg, self.weighter)
+        return self._analyzer
+
+    @property
+    def weighter(self):
+        return None
+
+    def analyze(self, queries: Sequence[AnalyzedQuery]) -> list[AnalyzedQuery]:
+        if not self.cfg.retrieval.use_query_analyzer:
+            return list(queries)
+        out = []
+        for q in queries:
+            aq = self.analyzer.analyze(q.raw)
+            aq.qid = q.qid
+            out.append(aq)
+        return out
+
     def retrieve_views(
         self, queries: Sequence[AnalyzedQuery], depth: int
     ) -> dict[str, list[list[ScoredChunk]]]:
-        return {name: v.search_batch(queries, depth, self.version) for name, v in self.views.items()}
+        if not any(len(q.sub_queries) > 1 for q in queries):
+            return {name: v.search_batch(queries, depth, self.version) for name, v in self.views.items()}
+        flat: list[AnalyzedQuery] = []
+        owner: list[tuple[int, float]] = []
+        for i, q in enumerate(queries):
+            for s in q.sub_queries or [SubQuery(q.text)]:
+                flat.append(AnalyzedQuery(raw=q.raw, text=s.text, query_type=q.query_type, qid=q.qid))
+                owner.append((i, s.weight))
+        out: dict[str, list[list[ScoredChunk]]] = {}
+        for name, v in self.views.items():
+            flat_hits = v.search_batch(flat, depth, self.version)
+            grouped: list[dict[str, list[ScoredChunk]]] = [{} for _ in queries]
+            weights: list[dict[str, float]] = [{} for _ in queries]
+            for j, ((qi, w), hits) in enumerate(zip(owner, flat_hits, strict=True)):
+                key = f"sub{j}"
+                grouped[qi][key] = [ScoredChunk(h.chunk, h.score, {key: h.score}) for h in hits]
+                weights[qi][key] = w
+            combined = []
+            for g, w in zip(grouped, weights, strict=True):
+                hits = rrf(g, self.cfg.retrieval.rrf_k, w)[:depth]
+                combined.append([ScoredChunk(h.chunk, h.score, {name: h.score}) for h in hits])
+            out[name] = combined
+        return out
 
     def weights_for(self, q: AnalyzedQuery) -> dict[str, float]:
         r = self.cfg.retrieval
@@ -110,6 +155,9 @@ class Pipeline:
         return out
 
     def search_batch(self, queries: Sequence[AnalyzedQuery], k: int) -> list[list[ScoredChunk]]:
+        return self._search_analyzed(self.analyze(queries), k)
+
+    def _search_analyzed(self, queries: Sequence[AnalyzedQuery], k: int) -> list[list[ScoredChunk]]:
         r = self.cfg.retrieval
         depth = max(k, r.first_stage_k)
         per_view = self.retrieve_views(queries, depth)
@@ -122,8 +170,8 @@ class Pipeline:
         self, query: str, top_k: int = 10, version: str | None = None, include_history: bool = False
     ) -> SearchResponse:
         t0 = time.perf_counter()
-        aq = AnalyzedQuery.plain(query)
-        hits = self.search_batch([aq], top_k)[0]
+        (aq,) = self.analyze([AnalyzedQuery.plain(query)])
+        hits = self._search_analyzed([aq], top_k)[0]
         return SearchResponse(
             query=query,
             query_type=aq.query_type.value,

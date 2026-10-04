@@ -29,24 +29,27 @@ class LexicalRetriever(BaseRetriever):
         self._bm25.index(corpus_tokens, show_progress=False)
 
     def query_tokens(self, q: AnalyzedQuery) -> list[str]:
-        return tokenize(q.text, self.stem) or [""]
+        assert self._bm25 is not None
+        vocab = self._bm25.vocab_dict
+        return [t for t in tokenize(q.text, self.stem) if t and t in vocab]
 
     def search_batch(
         self, queries: Sequence[AnalyzedQuery], k: int, version: str = "HEAD"
     ) -> list[list[ScoredChunk]]:
         assert self._bm25 is not None, "index() first"
         k = min(k, len(self._chunks))
-        idx, scores = self._bm25.retrieve(
-            [self.query_tokens(q) for q in queries], k=k, show_progress=False
-        )
-        out = []
-        for row_i, row_s in zip(idx, scores, strict=True):
-            hits = [
+        out: list[list[ScoredChunk]] = [[] for _ in queries]
+        toks = [self.query_tokens(q) for q in queries]
+        live = [i for i, t in enumerate(toks) if t]
+        if not live:
+            return out
+        idx, scores = self._bm25.retrieve([toks[i] for i in live], k=k, show_progress=False)
+        for qi, row_i, row_s in zip(live, idx, scores, strict=True):
+            out[qi] = [
                 ScoredChunk(self._chunks[i], float(s), {self.name: float(s)})
                 for i, s in zip(row_i, row_s, strict=True)
                 if s > 0
             ]
-            out.append(hits)
         return out
 
     def score_all(self, query: AnalyzedQuery) -> np.ndarray:

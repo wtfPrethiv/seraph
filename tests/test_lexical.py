@@ -25,6 +25,7 @@ def test_bm25_ranks_identifier_match(tmp_path):
     hits = r.search(AnalyzedQuery.plain("how is the config parsed"), 3)
     assert hits[0].chunk.chunk_hash == chunks[0].chunk_hash
     assert "lexical" in hits[0].scores
+    assert r.search_batch([AnalyzedQuery.plain("the of and"), AnalyzedQuery.plain("zzzz")], 3) == [[], []]
     r.save(tmp_path / "bm25.pkl")
     r2 = LexicalRetriever.load(tmp_path / "bm25.pkl")
     assert r2.search(AnalyzedQuery.plain("send http request"), 1)[0].chunk == chunks[2]

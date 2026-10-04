@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import time
 from collections.abc import Iterable, Iterator
 from dataclasses import asdict
 from typing import Any
@@ -114,13 +115,22 @@ def search_index(
     cfg: SeraphConfig | None = None,
 ) -> dict[str, Any]:
     """Search an indexed version (indexing it first if needed) and return JSON-ready results."""
+    t0 = time.perf_counter()
     stats = index.index_commit(ref)
     cfg = cfg or service_config()
     pipe, store = _pipeline(index, stats.commit, include_history, cfg)
-    out: dict[str, Any] = {"query": query, "requested_version": ref, "resolved_commit": stats.commit, "results": []}
+    t1 = time.perf_counter()
+    out: dict[str, Any] = {
+        "query": query,
+        "requested_version": ref,
+        "resolved_commit": stats.commit,
+        "index": {**asdict(stats), "ms": round((t1 - t0) * 1000, 1)},
+        "results": [],
+    }
     if pipe is None or not query.strip() or limit < 1:
         return out
     resp = pipe.search(query, top_k=limit, include_history=include_history)
+    out["search_ms"] = round((time.perf_counter() - t1) * 1000, 1)
     out["query_type"] = resp.query_type
     out["results"] = [
         {"score": round(r.score, 4), **asdict(store.source(r.chunk_hash)), "retrieval_scores": r.retrieval_scores}

@@ -73,3 +73,20 @@ class VersionedIndexTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_typescript_and_go_split_into_symbols():
+    from seraph.index import _chunks
+
+    ts = (
+        "import x from 'y';\n\n"
+        "export function load(path: string) {\n  return path;\n}\n\n"
+        "export class Runner {\n  private n = 1;\n\n  run(task: string) {\n    return task;\n  }\n}\n"
+    )
+    assert [(c[0], c[1]) for c in _chunks("a.ts", ts)] == [
+        ("load", "function"),
+        ("Runner", "class"),
+        ("Runner.run", "method"),
+    ]
+    go = "package main\n\nfunc (s *Server) Start() error {\n\treturn nil\n}\n"
+    assert [(c[0], c[1]) for c in _chunks("a.go", go)] == [("Server.Start", "method")]

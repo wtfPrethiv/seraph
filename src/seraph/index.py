@@ -17,6 +17,7 @@ from collections import Counter
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
 
 SUPPORTED_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".go"}
@@ -87,11 +88,120 @@ def _python_chunks(text: str) -> list[tuple[str | None, str, int, int, str]]:
     return chunks
 
 
+_TS_DECLS = {
+    "function_declaration": "function",
+    "generator_function_declaration": "function",
+    "class_declaration": "class",
+    "abstract_class_declaration": "class",
+    "interface_declaration": "interface",
+    "type_alias_declaration": "type",
+    "enum_declaration": "enum",
+    "lexical_declaration": "variable",
+    "variable_declaration": "variable",
+}
+_TS_METHODS = {"method_definition", "public_field_definition", "field_definition"}
+_GO_DECLS = {"function_declaration": "function", "method_declaration": "method", "type_declaration": "type"}
+
+
+@cache
+def _parser(language: str):
+    from tree_sitter import Language, Parser
+
+    if language == "go":
+        import tree_sitter_go as grammar
+
+        return Parser(Language(grammar.language()))
+    if language == "javascript":
+        import tree_sitter_javascript as grammar
+
+        return Parser(Language(grammar.language()))
+    import tree_sitter_typescript as grammar
+
+    tsx = language == "tsx"
+    return Parser(Language(grammar.language_tsx() if tsx else grammar.language_typescript()))
+
+
+def _node_name(node) -> str | None:
+    name = node.child_by_field_name("name")
+    if name is None and node.type in ("lexical_declaration", "variable_declaration", "type_declaration"):
+        for child in node.named_children:
+            name = child.child_by_field_name("name")
+            if name is not None:
+                break
+    if name is None and node.type == "method_declaration":
+        name = node.child_by_field_name("name")
+    return name.text.decode("utf8", "replace") if name is not None else None
+
+
+def _go_receiver(node) -> str | None:
+    receiver = node.child_by_field_name("receiver")
+    if receiver is None:
+        return None
+    names = [n.text.decode() for n in _walk(receiver) if n.type == "type_identifier"]
+    return names[0] if names else None
+
+
+def _walk(node):
+    yield node
+    for child in node.children:
+        yield from _walk(child)
+
+
+def _tree_chunks(path: str, text: str) -> list[tuple[str | None, str, int, int, str]]:
+    suffix = Path(path).suffix.lower()
+    language = {".go": "go", ".js": "javascript", ".jsx": "javascript", ".tsx": "tsx"}.get(suffix, "typescript")
+    lines = text.splitlines(keepends=True)
+    try:
+        root = _parser(language).parse(text.encode("utf8")).root_node
+    except Exception:
+        return [(None, "file", 1, max(len(lines), 1), text)]
+
+    def emit(node, symbol: str | None, kind: str, start_node=None) -> None:
+        start = (start_node or node).start_point[0] + 1
+        end = node.end_point[0] + 1
+        chunks.append((symbol, kind, start, end, "".join(lines[start - 1:end])))
+
+    chunks: list[tuple[str | None, str, int, int, str]] = []
+    decls = _GO_DECLS if language == "go" else _TS_DECLS
+    for top in root.named_children:
+        node = top
+        if node.type == "export_statement":
+            inner = node.child_by_field_name("declaration") or next(
+                (c for c in node.named_children if c.type in decls), None
+            )
+            if inner is None:
+                continue
+            node = inner
+        kind = decls.get(node.type)
+        if kind is None or node.end_point[0] == node.start_point[0]:
+            continue
+        name = _node_name(node)
+        if language == "go" and kind == "method":
+            receiver = _go_receiver(node)
+            name = f"{receiver}.{name}" if receiver and name else name
+        body = node.child_by_field_name("body")
+        methods = [c for c in body.named_children if c.type in _TS_METHODS] if kind == "class" and body else []
+        multi_line = [m for m in methods if m.end_point[0] > m.start_point[0]]
+        if multi_line:
+            first = multi_line[0]
+            header_end = first.start_point[0]
+            start = top.start_point[0] + 1
+            if header_end >= start:
+                chunks.append((name, "class", start, header_end, "".join(lines[start - 1:header_end])))
+            for method in multi_line:
+                method_name = _node_name(method)
+                emit(method, f"{name}.{method_name}" if name and method_name else method_name, "method")
+        else:
+            emit(node, name, kind, start_node=top)
+    if not chunks:
+        chunks.append((None, "file", 1, max(len(lines), 1), text))
+    return chunks
+
+
 def _chunks(path: str, text: str) -> list[tuple[str | None, str, int, int, str]]:
     if Path(path).suffix.lower() == ".py":
         return _python_chunks(text)
-    # File-level fallback keeps other languages searchable until their parsers land.
-    return [(None, "file", 1, max(len(text.splitlines()), 1), text)]
+    return _tree_chunks(path, text)
 
 
 class VersionedIndex:
@@ -101,6 +211,10 @@ class VersionedIndex:
             raise ValueError(f"Not a Git checkout: {self.repo}")
         self.db_path = Path(db_path) if db_path else self.repo / ".seraph" / "index.sqlite"
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        if not db_path:
+            ignore = self.db_path.parent / ".gitignore"
+            if not ignore.exists():
+                ignore.write_text("*\n")
         self.conn = sqlite3.connect(self.db_path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")

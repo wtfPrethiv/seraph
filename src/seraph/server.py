@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import asdict
 from pathlib import Path
 
@@ -14,12 +15,19 @@ from .service import search_index
 mcp = FastMCP("Seraph")
 
 
-def _store() -> VersionedIndex:
+def _repo() -> Path:
     repo = os.environ.get("SERAPH_REPO")
-    if not repo:
-        raise ValueError("SERAPH_REPO must point to the repository to search")
+    if repo:
+        return Path(repo)
+    top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if top.returncode != 0:
+        raise ValueError("not inside a Git repository; set SERAPH_REPO to the repository to search")
+    return Path(top.stdout.strip())
+
+
+def _store() -> VersionedIndex:
     db = os.environ.get("SERAPH_DB")
-    return VersionedIndex(Path(repo), Path(db) if db else None)
+    return VersionedIndex(_repo(), Path(db) if db else None)
 
 
 def _results(query: str, version: str, limit: int, include_history: bool) -> dict:
@@ -34,7 +42,7 @@ def _results(query: str, version: str, limit: int, include_history: bool) -> dic
 
 @mcp.tool()
 def search_code(query: str, limit: int = 5) -> dict:
-    """Find relevant code in the current commit of the configured repository."""
+    """Find code by meaning in the current commit of the repository; use before grep when the exact name is unknown."""
     return _results(query, "HEAD", limit, False)
 
 
@@ -42,6 +50,12 @@ def search_code(query: str, limit: int = 5) -> dict:
 def search_at_version(query: str, version: str, limit: int = 5) -> dict:
     """Find relevant code as it existed at a Git commit, branch, or tag."""
     return _results(query, version, limit, False)
+
+
+@mcp.tool()
+def search_history(query: str, limit: int = 5) -> dict:
+    """Find relevant code across every indexed version, collapsing near-identical copies of the same symbol."""
+    return _results(query, "HEAD", limit, True)
 
 
 @mcp.tool()

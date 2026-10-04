@@ -48,23 +48,22 @@ seraph-eval ask        # paste problems one by one; end each with a line holding
 
 Loading takes about 20 s once the corpus is embedded; each question then takes 15 to 600 ms. Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
 
-**4. P1: retrieval across versions** on any Git repository (this one works)
+**4. P1: retrieval across versions** on this repository, between commit `6bc99db` and `da76e47` (the commit that added `seraph-eval ask`)
 
 ```bash
-export SERAPH_CONFIG=experiments/configs/submission.yaml    # BGE pipeline; unset it for the instant keyword-only mode
-seraph --repo . index --ref HEAD~1
-seraph --repo . index --ref HEAD                            # re-parses only changed files: 1 file, 350 of 367 chunks reused, 0.18 s
-seraph --repo . search "where is the BM25 index built"
-seraph --repo . search "where is the BM25 index built" --ref HEAD~1
+seraph --repo . index --ref 6bc99db                         # first index: parses all 65 files
+seraph --repo . index --ref da76e47                         # re-parses only the 1 changed file; 350 of 367 chunks reused
+seraph --repo . search "rank solutions for a programming problem and mark the known correct one" --ref da76e47   # ask is #1
+seraph --repo . search "rank solutions for a programming problem and mark the known correct one" --ref 6bc99db   # ask does not exist yet
 ```
 
-With `SERAPH_CONFIG` set, the first search of a version embeds its chunks (about 45 s for this repository on an M5); later searches take under a second.
+These run in keyword mode and return in milliseconds. `export SERAPH_CONFIG=experiments/configs/submission.yaml` switches repository search to the BGE pipeline; the first search of a version then embeds its chunks (about 45 s for this repository on an Apple M5 GPU) and later searches take under a second.
 
 **5. Bonus: evolutionary retrieval**
 
 ```bash
-seraph --repo . search "how are identical chunks merged across versions" --history   # every indexed version, identical code shown once
-seraph --repo . compare HEAD~1 HEAD                                                   # changed symbols, dependencies and commits
+seraph --repo . search "known correct solution" --ref da76e47 --history   # every indexed version, identical code shown once
+seraph --repo . compare 6bc99db da76e47                                    # added: ask, _known_answers, _read_problem, with their new dependencies
 seraph --repo . symbol search_index
 seraph --repo . deps search_index --direction out
 ```

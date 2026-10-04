@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 
@@ -11,7 +13,7 @@ def normalize(x: np.ndarray) -> np.ndarray:
 
 
 class VectorIndex:
-    def __init__(self, dim: int, use_faiss: bool = True) -> None:
+    def __init__(self, dim: int, use_faiss: bool = sys.platform != "darwin") -> None:
         self.dim = dim
         self._faiss = None
         self._mat: np.ndarray | None = None

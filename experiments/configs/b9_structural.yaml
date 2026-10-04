@@ -1,0 +1,10 @@
+extends: b3_hybrid_weighted.yaml
+name: b9_structural
+retrieval:
+  use_structural: true
+  structural_model_path: experiments/models/structural.pkl
+  # gamma=0.2 picked on dev / dev_stdin via `seraph-eval tune-structural`
+  static_weights:
+    lexical: 0.16
+    semantic: 0.64
+    structural: 0.2

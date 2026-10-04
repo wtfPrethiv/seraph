@@ -41,6 +41,7 @@ class Pipeline:
         self._reranker = reranker
         self._analyzer = None
         self.views: dict[str, Retriever] = {}
+        self.structural = None
 
     @classmethod
     def from_config(cls, cfg: SeraphConfig, store: ChunkStore, version: str = "HEAD", **kw) -> Pipeline:
@@ -79,6 +80,15 @@ class Pipeline:
             dense = DenseRetriever(self.embedder)
             dense.index(chunks)
             self.views[dense.name] = dense
+        if r.use_structural:
+            from seraph.retrieval.structural import (
+                DEFAULT_MODEL_PATH,
+                StructuralModel,
+                StructuralScorer,
+            )
+
+            self.structural = StructuralScorer(StructuralModel.load(r.structural_model_path or DEFAULT_MODEL_PATH))
+            self.structural.index(chunks)
 
     def model_metadata(self) -> dict[str, str]:
         meta = {name: getattr(v, "revision", name) for name, v in self.views.items()}
@@ -200,6 +210,8 @@ class Pipeline:
         r = self.cfg.retrieval
         depth = max(k, r.first_stage_k)
         per_view = self.retrieve_views(queries, depth)
+        if self.structural is not None:
+            per_view[View.STRUCTURAL.value] = self.structural.rescore(queries, self.fuse(queries, per_view))
         if r.use_graph_expansion and self.graph is not None:
             per_view["graph"] = self.graph_view(queries, self.fuse(queries, per_view))
         if r.use_evolution and self.versions is not None:

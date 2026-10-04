@@ -169,6 +169,48 @@ def train_classifier(data: str, cache_dir: str = ".seraph_cache") -> None:
     typer.echo(f"trained on {len(rows)} queries -> {out}")
 
 
+@app.command("train-structural")
+def train_structural(cache_dir: str = ".seraph_cache", out: str = "experiments/models/structural.pkl", c: float = 1.0) -> None:
+    """Fit the query -> structural-trait model on the AppsRetrieval fit split."""
+    from seraph.retrieval.structural import train_on_apps
+
+    model = train_on_apps(cache_dir, out, c)
+    trained = sum(m is not None for m in model.models)
+    typer.echo(f"{len(model.vocab)} traits ({trained} predicted, rest prior-only) -> {out}")
+
+
+@app.command("tune-structural")
+def tune_structural(
+    config: str = "experiments/configs/b3_hybrid_weighted.yaml",
+    split: list[str] = typer.Option(["dev", "dev_stdin"], "--split"),
+) -> None:
+    """Retrieve views once, add the gamma view over the fused pool, grid-search its weight."""
+    from seraph.config import load_config
+    from seraph.evaluation.coir import score_run
+    from seraph.memory import InMemoryChunkStore
+    from seraph.retrieval.fusion import fuse
+    from seraph.retrieval.pipeline import Pipeline
+    from seraph.types import AnalyzedQuery
+
+    cfg = load_config(config, {"retrieval": {"use_structural": True}})
+    data = load_apps(cfg.cache_dir)
+    pipe = Pipeline.from_config(cfg, InMemoryChunkStore(data.chunks()))
+    base = dict(cfg.retrieval.static_weights)
+    for name in split:
+        s = data.split(name)
+        qs = [AnalyzedQuery.plain(t, qid=q) for q, t in s.queries.items()]
+        per_view = pipe.retrieve_views(qs, cfg.retrieval.first_stage_k)
+        per_view["structural"] = pipe.structural.rescore(qs, pipe.fuse(qs, per_view))
+        for g in (0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5):
+            w = {k: v * (1 - g) for k, v in base.items() if k in per_view} | {"structural": g}
+            run_ = {}
+            for i, q in enumerate(qs):
+                hits = fuse({v: h[i] for v, h in per_view.items()}, "weighted", w, norm=cfg.retrieval.fusion_norm)
+                run_[q.qid] = {h.chunk_hash: h.score for h in hits[:100]}
+            m = score_run(run_, s.qrels)
+            typer.echo(f"{name:10s} gamma={g:<5} ndcg@10={m['ndcg@10']:.4f} mrr@10={m['mrr@10']:.4f} r@10={m['recall@10']:.4f}")
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

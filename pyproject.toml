@@ -18,6 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+cpu = [
+    "torch>=2.4",
+    "transformers>=4.51,<5",
+    "sentence-transformers>=3.4",
+    "faiss-cpu>=1.8",
+    "einops>=0.8",
+]
 gpu = [
     "torch>=2.4",
     "transformers>=4.51,<5",
@@ -54,9 +61,18 @@ packages = ["src/seraph"]
 
 [tool.uv]
 python-preference = "managed"
+conflicts = [[{ extra = "cpu" }, { extra = "gpu" }]]
 
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu126", extra = "gpu" }]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "gpu" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
 
 [[tool.uv.index]]
 name = "pytorch-cu126"

@@ -42,6 +42,7 @@ class Pipeline:
         self._analyzer = None
         self.views: dict[str, Retriever] = {}
         self.structural = None
+        self._weighter = None
 
     @classmethod
     def from_config(cls, cfg: SeraphConfig, store: ChunkStore, version: str = "HEAD", **kw) -> Pipeline:
@@ -101,12 +102,34 @@ class Pipeline:
         if self._analyzer is None:
             from seraph.query.analyzer import build_analyzer
 
-            self._analyzer = build_analyzer(self.cfg, self.weighter)
+            self._analyzer = build_analyzer(self.cfg)
         return self._analyzer
 
     @property
     def weighter(self):
-        return None
+        r = self.cfg.retrieval
+        if r.fusion != "adaptive" or r.adaptive_weights == "off":
+            return None
+        if self._weighter is None:
+            from seraph.query.weights import DEFAULT_MODEL_PATH, LearnedWeights, RuleWeights
+
+            if r.adaptive_weights == "rules":
+                self._weighter = RuleWeights()
+            else:
+                self._weighter = LearnedWeights.load(r.weight_model_path or DEFAULT_MODEL_PATH)
+        return self._weighter
+
+    def assign_weights(self, queries: Sequence[AnalyzedQuery], per_view: dict[str, list[list[ScoredChunk]]]) -> None:
+        r = self.cfg.retrieval
+        if self.weighter is None:
+            return
+        views = dict(per_view)
+        if r.use_graph_expansion and self.graph is not None:
+            views.setdefault(View.GRAPH.value, [])
+        if r.use_evolution and self.versions is not None:
+            views.setdefault(View.EVOLUTION.value, [])
+        for q, w in zip(queries, self.weighter.weights_batch(queries, views), strict=True):
+            q.weights = w
 
     def analyze(self, queries: Sequence[AnalyzedQuery]) -> list[AnalyzedQuery]:
         if not self.cfg.retrieval.use_query_analyzer:
@@ -212,6 +235,7 @@ class Pipeline:
         per_view = self.retrieve_views(queries, depth)
         if self.structural is not None:
             per_view[View.STRUCTURAL.value] = self.structural.rescore(queries, self.fuse(queries, per_view))
+        self.assign_weights(queries, per_view)
         if r.use_graph_expansion and self.graph is not None:
             per_view["graph"] = self.graph_view(queries, self.fuse(queries, per_view))
         if r.use_evolution and self.versions is not None:

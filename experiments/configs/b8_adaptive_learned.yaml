@@ -1,0 +1,8 @@
+extends: b9_structural.yaml
+name: b8_adaptive_learned
+# trained on all of dev by `seraph-eval tune-adaptive`; dev numbers from this config are in-sample,
+# use the CV rows in experiments/results/adaptive_weights.md for dev and this config only for --final.
+retrieval:
+  fusion: adaptive
+  adaptive_weights: learned
+  weight_model_path: experiments/models/adaptive_weights.pkl

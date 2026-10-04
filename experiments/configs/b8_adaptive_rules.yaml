@@ -1,0 +1,5 @@
+extends: b9_structural.yaml
+name: b8_adaptive_rules
+retrieval:
+  fusion: adaptive
+  adaptive_weights: rules

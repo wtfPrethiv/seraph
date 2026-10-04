@@ -1,0 +1,85 @@
+{
+  "name": "b8_adaptive_rules",
+  "split": "dev",
+  "n_queries": 1000,
+  "metrics": {
+    "ndcg@1": 0.768,
+    "mrr@1": 0.768,
+    "recall@1": 0.768,
+    "ndcg@10": 0.8498030850602156,
+    "mrr@10": 0.82438373015873,
+    "recall@10": 0.929,
+    "ndcg@100": 0.8613415772119333,
+    "mrr@100": 0.8268415902390455,
+    "recall@100": 0.982,
+    "latency_p50_ms": 5.680117187239375,
+    "latency_p95_ms": 9.369718749894673,
+    "latency_mean_ms": 5.834174600022379
+  },
+  "index_seconds": 4.174352600006387,
+  "meta": {
+    "git_sha": "9b2bc06",
+    "config_hash": "1146d5fd6b",
+    "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
+    "models": {
+      "lexical": "lexical",
+      "semantic": "qwen3-emb-0.6b@97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
+    },
+    "seed": 42,
+    "python": "3.12.15",
+    "timestamp": "2026-10-04T10:18:03"
+  },
+  "config": {
+    "name": "b8_adaptive_rules",
+    "seed": 42,
+    "device": "auto",
+    "cache_dir": ".seraph_cache",
+    "cache_query_embeddings": true,
+    "allow_local_models": false,
+    "retrieval": {
+      "first_stage_k": 100,
+      "use_bm25": true,
+      "bm25_k1": 1.2,
+      "bm25_b": 0.9,
+      "bm25_stem": false,
+      "use_dense": true,
+      "dense_model": "qwen3-emb-0.6b",
+      "dense_fallback": null,
+      "fusion": "adaptive",
+      "rrf_k": 60,
+      "fusion_norm": "minmax",
+      "static_weights": {
+        "lexical": 0.16,
+        "semantic": 0.64,
+        "structural": 0.2,
+        "graph": 0.0,
+        "evolution": 0.0
+      },
+      "use_reranker": false,
+      "reranker_model": "gemini-flash-lite-listwise",
+      "reranker_fallback": null,
+      "rerank_depth": 20,
+      "rerank_blend": 0.0,
+      "use_query_analyzer": false,
+      "analyzer": "rules",
+      "use_decomposition": false,
+      "adaptive_weights": "rules",
+      "weight_model_path": null,
+      "use_structural": true,
+      "structural_model_path": "experiments/models/structural.pkl",
+      "use_graph_expansion": false,
+      "graph_hops": 1,
+      "graph_decay": 0.5,
+      "use_evolution": false,
+      "use_dedup": false,
+      "use_mmr": false,
+      "mmr_lambda": 0.7
+    },
+    "llm": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "model": "gemini-3.5-flash-lite",
+      "api_key_env": "GEMINI_API_KEY",
+      "temperature": 0.0
+    }
+  }
+}

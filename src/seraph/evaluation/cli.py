@@ -211,6 +211,103 @@ def tune_structural(
             typer.echo(f"{name:10s} gamma={g:<5} ndcg@10={m['ndcg@10']:.4f} mrr@10={m['mrr@10']:.4f} r@10={m['recall@10']:.4f}")
 
 
+@app.command("tune-adaptive")
+def tune_adaptive(
+    config: str = "experiments/configs/b9_structural.yaml",
+    split: str = "dev",
+    folds: int = 5,
+    step: float = 0.1,
+    top_cells: list[int] = typer.Option([3, 6], "--top-cells"),
+    out: str = "experiments/results/adaptive_weights.md",
+    model_out: str = "experiments/models/adaptive_weights.pkl",
+) -> None:
+    """Static vs rule vs learned (k-fold CV) adaptive weights vs the per-query oracle, on dev."""
+    from pathlib import Path
+
+    import numpy as np
+    from sklearn.model_selection import KFold
+
+    from seraph.config import load_config
+    from seraph.memory import InMemoryChunkStore
+    from seraph.query.weights import LearnedWeights, RuleWeights, cell_utilities, query_features
+    from seraph.retrieval.pipeline import Pipeline
+    from seraph.types import AnalyzedQuery
+
+    cfg = load_config(config)
+    r = cfg.retrieval
+    data = load_apps(cfg.cache_dir)
+    s = data.split(split)
+    stdin_ids = set(data.split("dev_stdin").queries) if split == "dev" else set()
+    pipe = Pipeline.from_config(cfg, InMemoryChunkStore(data.chunks()))
+    qs = [AnalyzedQuery.plain(t, qid=q) for q, t in s.queries.items()]
+    per_view = pipe.retrieve_views(qs, r.first_stage_k)
+    if pipe.structural is not None:
+        per_view["structural"] = pipe.structural.rescore(qs, pipe.fuse(qs, per_view))
+    views = list(per_view)
+    runs = [{v: per_view[v][i] for v in views} for i in range(len(qs))]
+    rels = [s.qrels.get(q.qid, {}) for q in qs]
+    model = LearnedWeights(views, step, norm=r.fusion_norm)
+    grid = model.grid
+    util = cell_utilities(runs, rels, views, grid, r.fusion_norm)
+    x = np.stack([query_features(q, run_, views) for q, run_ in zip(qs, runs, strict=True)])
+
+    def util_of(weights: list[dict[str, float]]) -> np.ndarray:
+        cells = np.array([[w.get(v, 0.0) for v in views] for w in weights])
+        return np.array([
+            cell_utilities([run_], [rel], views, c[None], r.fusion_norm)[0, 0]
+            for run_, rel, c in zip(runs, rels, cells, strict=True)
+        ])
+
+    static = util_of([dict(r.static_weights)] * len(qs))
+    rules = util_of(RuleWeights().weights_batch(qs, per_view))
+    cv_static = np.zeros(len(qs))
+    variants = [(kind, n) for kind in ("ridge", "lgbm") for n in (0, *top_cells)]
+    learned = {v: np.zeros(len(qs)) for v in variants}
+    for tr, te in KFold(folds, shuffle=True, random_state=cfg.seed).split(x):
+        best = util[tr].mean(axis=0).argmax()
+        cv_static[te] = util[te, best]
+        for (kind, n), arr in learned.items():
+            m = LearnedWeights(views, step, kind, r.fusion_norm, n).fit(x[tr], util[tr])
+            arr[te] = util[te, m.predict_cells(x[te])]
+    best_variant = max(learned, key=lambda v: learned[v].mean())
+    oracle = util.max(axis=1)
+    best_cell = grid[util.mean(axis=0).argmax()]
+    rows = [
+        (f"static tuned ({', '.join(f'{v}={r.static_weights.get(v, 0):g}' for v in views)})", static),
+        (f"best grid cell, in-sample ({', '.join(f'{v}={w:.1f}' for v, w in zip(views, best_cell, strict=True))})",
+         util[:, util.mean(axis=0).argmax()]),
+        (f"best grid cell, {folds}-fold CV", cv_static),
+        ("rule-based adaptive", rules),
+        *[
+            (f"learned adaptive, {'LightGBM' if k == 'lgbm' else k}, {f'top {n} cells' if n else 'all cells'} "
+             f"({folds}-fold CV)", u)
+            for (k, n), u in learned.items()
+        ],
+        ("per-query oracle (upper bound)", oracle),
+    ]
+    mask = np.array([q.qid in stdin_ids for q in qs])
+    head = f"| weighting | {split} NDCG@10 |" + (" dev_stdin NDCG@10 |" if mask.any() else "")
+    lines = [
+        f"Views: {', '.join(views)}; grid step {step} ({len(grid)} cells); {len(qs)} {split} queries; "
+        f"norm={r.fusion_norm}. NDCG@10 computed from cached per-view runs.",
+        "",
+        head,
+        "|---|---|" + ("---|" if mask.any() else ""),
+    ]
+    for name, u in rows:
+        line = f"| {name} | {u.mean():.4f} |"
+        if mask.any():
+            line += f" {u[mask].mean():.4f} |"
+        lines.append(line)
+    md = "\n".join(lines) + "\n"
+    typer.echo(md)
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    Path(out).write_text(md, encoding="utf-8")
+    kind, n = best_variant
+    LearnedWeights(views, step, kind, r.fusion_norm, n).fit(x, util).save(model_out)
+    typer.echo(f"saved best CV variant ({kind}, top_cells={n}) trained on all {split} queries -> {model_out}")
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

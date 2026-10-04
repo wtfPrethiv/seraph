@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
 
 from seraph.config import EMBEDDERS, SeraphConfig
 from seraph.protocols import ChunkStore, Embedder, Reranker, Retriever
 from seraph.retrieval.fusion import fuse
 from seraph.retrieval.lexical import LexicalRetriever
-from seraph.types import AnalyzedQuery, Chunk, ScoredChunk
+from seraph.types import AnalyzedQuery, Chunk, ScoredChunk, SearchResponse, SearchResult
 
 
 class Pipeline:
@@ -116,3 +117,62 @@ class Pipeline:
         if r.use_reranker:
             results = self.rerank(queries, results)
         return [h[:k] for h in results]
+
+    def search(
+        self, query: str, top_k: int = 10, version: str | None = None, include_history: bool = False
+    ) -> SearchResponse:
+        t0 = time.perf_counter()
+        aq = AnalyzedQuery.plain(query)
+        hits = self.search_batch([aq], top_k)[0]
+        return SearchResponse(
+            query=query,
+            query_type=aq.query_type.value,
+            version=version or self.version,
+            results=[to_result(h) for h in hits],
+            sub_queries=[s.text for s in aq.sub_queries],
+            weights=self.weights_for(aq) if self.cfg.retrieval.fusion != "rrf" else {},
+            latency_ms=(time.perf_counter() - t0) * 1000,
+        )
+
+
+def to_result(h: ScoredChunk, snippet_lines: int = 40) -> SearchResult:
+    c = h.chunk
+    return SearchResult(
+        chunk_hash=c.chunk_hash,
+        file=c.file,
+        symbol=c.symbol,
+        kind=c.kind,
+        start_line=c.start_line,
+        end_line=c.end_line,
+        version_id=c.version_id,
+        score=float(h.score),
+        retrieval_scores={k: float(v) for k, v in h.scores.items()},
+        snippet="\n".join(c.text.splitlines()[:snippet_lines]),
+        lineage_id=c.lineage_id,
+    )
+
+
+_REPOS: dict[str, Pipeline] = {}
+
+
+def register_repo(repo: str, pipeline: Pipeline) -> None:
+    """Indexing side (Person B) registers a built pipeline per repo; `search()` looks it up."""
+    _REPOS[repo] = pipeline
+
+
+def get_pipeline(repo: str) -> Pipeline:
+    try:
+        return _REPOS[repo]
+    except KeyError:
+        raise KeyError(f"repo {repo!r} is not indexed; call register_repo() first") from None
+
+
+def search(
+    query: str,
+    repo: str,
+    top_k: int = 10,
+    version: str = "HEAD",
+    include_history: bool = False,
+) -> SearchResponse:
+    """Public entry point used by the CLI and MCP server."""
+    return get_pipeline(repo).search(query, top_k, version, include_history)

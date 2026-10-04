@@ -22,6 +22,25 @@ def test_weighted_fusion_runs():
     assert p.search_batch([AnalyzedQuery.plain("read file")], 2)[0][0].chunk.symbol == "io.read_file"
 
 
+def test_public_search_response_shape():
+    import json
+
+    import pytest
+
+    from seraph.retrieval.pipeline import register_repo, search
+
+    p = make_pipeline(fusion="weighted", static_weights={"lexical": 0.4, "semantic": 0.6})
+    register_repo("sample", p)
+    resp = search("parse config strict validate", repo="sample", top_k=2)
+    d = resp.to_dict()
+    json.dumps(d)
+    assert d["results"][0]["symbol"] == "cfg.parse_config"
+    assert set(d["results"][0]["retrieval_scores"]) >= {"lexical", "semantic"}
+    assert d["weights"] == {"lexical": 0.4, "semantic": 0.6}
+    with pytest.raises(KeyError, match="not indexed"):
+        search("x", repo="missing")
+
+
 class FlipReranker:
     """Reverses the candidate order; checks the rerank stage is applied and the tail kept."""
 

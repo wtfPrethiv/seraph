@@ -129,7 +129,12 @@ def main() -> None:
     compare.add_argument("--limit", type=int, default=200)
     compare.add_argument("--json", action="store_true")
     commands.add_parser("versions", help="List indexed commit IDs")
+    commands.add_parser("smoke", help="Self-check on a temporary two-commit repository (no model download)")
     args = parser.parse_args()
+    if args.command == "smoke":
+        from .smoke import run
+
+        raise SystemExit(run())
     with VersionedIndex(args.repo, args.db) as store:
         if args.command == "index":
             print(json.dumps(asdict(store.index_commit(args.ref, args.base)), indent=2))

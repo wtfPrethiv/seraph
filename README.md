@@ -25,10 +25,17 @@ git clone https://github.com/wtfPrethiv/seraph && cd seraph
 uv sync --extra eval --extra cpu --extra mcp            # use --extra gpu instead of cpu on a CUDA machine
 source .venv/bin/activate
 # or, without uv: python3.12 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt
+seraph smoke                                            # 7 checks on a temporary two-commit repo, under a second, no model download
 seraph-eval train-structural                            # trains the structural (γ) model on the train split, about a minute
 ```
 
-On macOS, if a run stops with `OMP: Error #15`, see the OpenMP note under [Limitations](#limitations).
+`seraph smoke` indexes a throwaway repository at two commits, searches both versions, searches all versions, compares them and prints PASS or FAIL with timings for each check.
+
+**Skip the slow corpus embedding (recommended on CPU).** Embedding the 8,765 solutions with BGE-Code-v1 takes about 15 to 25 minutes on an Apple M5 GPU and about 3.3 hours on CPU alone. The release has the precomputed vectors (32 MB):
+
+```bash
+mkdir -p .seraph_cache && curl -L https://github.com/wtfPrethiv/seraph/releases/download/PRISM_GENAI_HACKATHON_Y2026/bge-code-v1-corpus-embeddings.tar.gz | tar -xz -C .seraph_cache
+```
 
 **2. P0: the screening score** (already attached to the [PRISM_GENAI_HACKATHON_Y2026 release](https://github.com/wtfPrethiv/seraph/releases/tag/PRISM_GENAI_HACKATHON_Y2026): nDCG@10 0.9770, MRR@10 0.9702)
 
@@ -36,7 +43,7 @@ On macOS, if a run stops with `OMP: Error #15`, see the OpenMP note under [Limit
 seraph-eval submit --final --out appsretrieval_results.json
 ```
 
-The first run downloads BGE-Code-v1 (about 6 GB) and embeds the 8,765 corpus solutions once; on an Apple M5 GPU the whole run took about an hour. Embeddings are cached in `.seraph_cache/`, so later runs and step 3 reuse them.
+The first run downloads BGE-Code-v1 (about 6 GB). Without the precomputed vectors above it also embeds the 8,765 corpus solutions; on an Apple M5 GPU the whole run took about an hour. Embeddings are cached in `.seraph_cache/`, so later runs and step 3 reuse them. Add `--set device=cpu` to force CPU.
 
 **3. Hands-on: ask your own questions** with the submitted pipeline (BM25 + BGE-Code-v1 + structural γ)
 
@@ -46,7 +53,7 @@ seraph-eval ask --file problem.txt --top-k 10
 seraph-eval ask        # paste problems one by one; end each with a line holding only "."
 ```
 
-Loading takes about 20 s once the corpus is embedded; each question then takes 15 to 600 ms. Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
+Loading takes about 20 s once the corpus is embedded. A new question then takes about 0.2 s on an Apple M5 GPU and about 0.9 s on CPU, most of it spent encoding the question; a question asked before is served from the query cache in milliseconds. See [Performance](#performance). Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
 
 **4. P1: retrieval across versions** on this repository, between commit `6bc99db` and `da76e47` (the commit that added `seraph-eval ask`)
 
@@ -71,6 +78,24 @@ seraph --repo . deps search_index --direction out
 Symbols are followed across commits through renames and moves, so history results stay linked when code is renamed.
 
 **6. In a coding agent (optional).** [Morpheus](https://github.com/projectakshith/morpheus/tree/seraph-test) calls Seraph over MCP; see [MCP server](#mcp-server-morpheus-and-other-agents).
+
+## Performance
+
+Measured on an Apple M5 (10 cores, 16 GB). CPU rows use `device: cpu` with `cache_query_embeddings: false`, so every question is encoded; latency is over 40 AppsRetrieval test questions, for the full pipeline (BM25 + dense + structural γ) over all 8,765 solutions.
+
+| | BGE-Code-v1 (submitted) | EmbeddingGemma-300M (CPU option) |
+|---|---|---|
+| Embed the 8,765 solutions, CPU | ~3.3 h (or download, see above) | ~17 min |
+| Load model and indexes, first question, CPU | 22 s | 11 s |
+| Warm question p50 / p95, CPU | 938 ms / 1,848 ms | 149 ms / 260 ms |
+| Warm question p50, Apple M5 GPU | ~190 ms | not measured |
+| Peak RAM, CPU | 5.9 GB | 1.5 GB |
+| nDCG@10, dense only, dev / dev_stdin | 0.992 / 0.989 (likely trained on these queries) | 0.744 / 0.782 |
+| nDCG@10, full pipeline, test | 0.9770 | not run (test split is not reused for model choice) |
+
+EmbeddingGemma-300M is the practical CPU choice: about 6x faster per question and a quarter of the memory, at a clear accuracy cost. Use it with `--set retrieval.dense_model=embeddinggemma-300m`.
+
+**Indexing a large repository** (Django, keyword mode, CPU): release 5.1 indexes 2,899 files into 9,799 symbols in 31 s with 350 MB peak memory. Release 5.1.1, 28 commits later with 59 files changed, then re-indexes in 1.3 s: 38 files parsed, 9,560 of 9,802 symbols reused, reusing the nearest indexed ancestor. A search over 9,802 symbols takes about 1 ms once the CLI has loaded (about 2 s per CLI call, mostly loading the index).
 
 ## Results
 
@@ -280,7 +305,7 @@ The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota er
 
 - The Gemini embedder works but has not been benchmarked on the full corpus because of free-tier quota.
 - The test split was run without reranking: 3,765 listwise Gemini calls do not fit the free tier, and no local reranker has been benchmarked yet.
-- On macOS, `torch`, `faiss-cpu` and `scikit-learn` each ship their own OpenMP runtime. If a run aborts with `OMP: Error #15`, point the `libomp.dylib` copies under `faiss/.dylibs/` and `sklearn/.dylibs/` at the one in `torch/lib/`.
+- On macOS, `torch` and `faiss-cpu` each ship their own OpenMP runtime and crash when both are loaded, so vector search uses exact numpy inner products there instead of FAISS (same results; milliseconds for 8,765 vectors).
 - Dense query decomposition was not ablated: the sub-queries have no cached embeddings. BM25 decomposition is in `b7_bm25_decomp`.
 - Measured latency excludes query encoding when vectors come from the cache.
 - Graph, evolution and dedup gains need SeraphBench, which is not yet available.

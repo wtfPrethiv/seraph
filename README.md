@@ -3,21 +3,26 @@ Seraph - a query-adaptive code intelligence engine that combines semantic, lexic
 
 ## Results
 
-CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored once through `mteb.evaluate`. The upload JSON is attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0).
+CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored through `mteb.evaluate`. The submitted JSON is attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0).
 
-| config | embedder | nDCG@10 | MRR@10 | Recall@10 | Recall@100 |
-|---|---|---|---|---|---|
-| `submission_bge.yaml` | BGE-Code-v1 (1.5B), local | **0.9795** | **0.9733** | 0.9976 | 0.9989 |
-| `submission.yaml` | BM25 + Qwen3-Embedding-0.6B + structural γ | 0.7487 | 0.7039 | 0.8882 | 0.9835 |
+Both rows are the same pipeline (BM25 + dense view + structural γ, weighted fusion 0.16 / 0.64 / 0.2) with a different embedder in the dense view:
 
-Both run locally with no API calls. Reproduce the submission:
+| embedder | nDCG@10 | MRR@10 | Recall@10 | Recall@100 |
+|---|---|---|---|---|
+| **BGE-Code-v1** (1.5B), submitted | **0.9770** | **0.9702** | 0.9971 | 0.9992 |
+| Qwen3-Embedding-0.6B | 0.7487 | 0.7039 | 0.8882 | 0.9835 |
+
+Everything runs locally with no API calls. Reproduce the submission:
 
 ```bash
 uv sync --extra eval --extra cpu                 # --extra gpu on a CUDA machine
-seraph-eval submit --config experiments/configs/submission_bge.yaml --final --out appsretrieval_results.json
+seraph-eval train-structural                     # fit split -> experiments/models/structural.pkl
+seraph-eval submit --config experiments/configs/submission.yaml --final --out appsretrieval_results.json
 ```
 
-The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
+Add `--set retrieval.dense_model=qwen3-emb-0.6b` for the Qwen3 row. The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
+
+**How the test split was used.** The Qwen3 row was the first, frozen submission. We then compared embedders on dev, switched the dense view to BGE-Code-v1 and ran the test split again with the fusion weights unchanged (they were tuned for Qwen3, never on test). An intermediate run of BGE-Code-v1 alone, without BM25 or γ, scored 0.9795, so on this benchmark the extra views add nothing on top of a strong embedder. BGE-Code-v1 was trained on public code-retrieval data that likely overlaps the APPS train queries (dev_stdin 0.989); its test score matches the 98.08 its authors report.
 
 ## How retrieval works
 
@@ -156,7 +161,7 @@ The graph, dedup and evolution components cannot show gains on AppsRetrieval: it
 
 ### Dense model sweep
 
-On dev_stdin NDCG@10, BGE-Code-v1 scores 0.989. That number overstates it: BGE-Code-v1 was trained on code-retrieval data that likely includes these train queries, so only the test split (0.9795) is a fair measure. On dev / dev_stdin NDCG@10: Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
+On dev / dev_stdin NDCG@10, BGE-Code-v1 scores 0.992 / 0.989 and EmbeddingGemma-300M 0.744 / 0.782. BGE-Code-v1's dev numbers overstate it, since it was likely trained on these train queries; its test score is in Results. Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
 
 ### Adaptive weights versus the oracle
 
@@ -188,7 +193,7 @@ seraph-eval tune-adaptive                  # adaptive weights table + learned mo
 seraph-eval ablate [--skip-api]            # ablation ladder -> experiments/results/ablation.md
 seraph-eval run experiments/configs/b9_structural.yaml --split dev_stdin
 seraph-eval ablate --final                 # once, at the very end (test split)
-seraph-eval submit --config experiments/configs/submission_bge.yaml --final   # upload JSON
+seraph-eval submit --final                 # upload JSON (experiments/configs/submission.yaml)
 ```
 
 The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota error stops the affected rung and marks it `skipped (quota)` without failing the run.

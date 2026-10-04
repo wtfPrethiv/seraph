@@ -1,0 +1,84 @@
+{
+  "name": "b2_dense_embeddinggemma-300m",
+  "split": "dev_stdin",
+  "n_queries": 334,
+  "metrics": {
+    "ndcg@1": 0.6646706586826348,
+    "mrr@1": 0.6646706586826348,
+    "recall@1": 0.6646706586826348,
+    "ndcg@10": 0.7820570812509348,
+    "mrr@10": 0.7445561258435509,
+    "recall@10": 0.8982035928143712,
+    "ndcg@100": 0.8009583444145378,
+    "mrr@100": 0.7483703491782503,
+    "recall@100": 0.9880239520958084,
+    "latency_p50_ms": 273.46919987508045,
+    "latency_p95_ms": 299.64041862490376,
+    "latency_mean_ms": 275.1672191886161
+  },
+  "index_seconds": 891.4424462919997,
+  "meta": {
+    "git_sha": "399bdfc",
+    "config_hash": "466ce8e824",
+    "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
+    "models": {
+      "semantic": "embeddinggemma-300m@57c266a740f537b4dc058e1b0cda161fd15afa75"
+    },
+    "seed": 42,
+    "python": "3.12.14",
+    "timestamp": "2026-10-04T14:13:48"
+  },
+  "config": {
+    "name": "b2_dense_embeddinggemma-300m",
+    "seed": 42,
+    "device": "auto",
+    "cache_dir": ".seraph_cache",
+    "cache_query_embeddings": true,
+    "allow_local_models": true,
+    "retrieval": {
+      "first_stage_k": 100,
+      "use_bm25": false,
+      "bm25_k1": 1.2,
+      "bm25_b": 0.9,
+      "bm25_stem": false,
+      "use_dense": true,
+      "dense_model": "embeddinggemma-300m",
+      "dense_fallback": null,
+      "fusion": "none",
+      "rrf_k": 60,
+      "fusion_norm": "minmax",
+      "static_weights": {
+        "lexical": 0.3,
+        "semantic": 0.7,
+        "structural": 0.0,
+        "graph": 0.0,
+        "evolution": 0.0
+      },
+      "use_reranker": false,
+      "reranker_model": "gemini-flash-lite-listwise",
+      "reranker_fallback": null,
+      "rerank_depth": 20,
+      "rerank_blend": 0.0,
+      "use_query_analyzer": false,
+      "analyzer": "rules",
+      "use_decomposition": false,
+      "adaptive_weights": "off",
+      "weight_model_path": null,
+      "use_structural": false,
+      "structural_model_path": null,
+      "use_graph_expansion": false,
+      "graph_hops": 1,
+      "graph_decay": 0.5,
+      "use_evolution": false,
+      "use_dedup": false,
+      "use_mmr": false,
+      "mmr_lambda": 0.7
+    },
+    "llm": {
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "model": "gemini-3.5-flash-lite",
+      "api_key_env": "GEMINI_API_KEY",
+      "temperature": 0.0
+    }
+  }
+}

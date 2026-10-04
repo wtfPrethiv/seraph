@@ -276,6 +276,23 @@ class VersionedIndex:
                 feature TEXT NOT NULL,
                 PRIMARY KEY (commit_id, feature)
             );
+            -- One row per symbol occurrence (or deletion) per commit; lineage_id survives renames and moves.
+            CREATE TABLE IF NOT EXISTS lineage (
+                commit_id TEXT NOT NULL REFERENCES versions(commit_id),
+                lineage_id TEXT NOT NULL,
+                occurrence_id TEXT,
+                path TEXT NOT NULL,
+                symbol TEXT,
+                change_type TEXT NOT NULL,
+                previous TEXT,
+                similarity REAL
+            );
+            CREATE INDEX IF NOT EXISTS lineage_by_id ON lineage(lineage_id);
+            CREATE INDEX IF NOT EXISTS lineage_by_commit ON lineage(commit_id);
+            CREATE TABLE IF NOT EXISTS lineage_base (
+                commit_id TEXT PRIMARY KEY REFERENCES versions(commit_id),
+                base TEXT
+            );
         """)
 
     def _git(self, *args: str) -> bytes:
@@ -373,9 +390,146 @@ class VersionedIndex:
                         (occurrence_id, commit, path, symbol, kind, start, end, content_hash),
                     )
             self.conn.execute("INSERT INTO derived VALUES (?, 'refs')", (commit,))
+        self._update_lineage(commit)
 
         total = self.conn.execute("SELECT COUNT(*) FROM occurrences WHERE commit_id=?", (commit,)).fetchone()[0]
         return IndexStats(commit, base, parsed_files, reused, total)
+
+    def _is_ancestor(self, ancestor: str, commit: str) -> bool:
+        result = subprocess.run(["git", "-C", str(self.repo), "merge-base", "--is-ancestor", ancestor, commit],
+                                capture_output=True, check=False)
+        return result.returncode == 0
+
+    def _lineage_base(self, commit: str) -> str | None:
+        """The nearest indexed first-parent ancestor, which lineage is matched against."""
+        indexed = set(self.indexed_versions()) - {commit}
+        if not indexed:
+            return None
+        history = self._git("rev-list", "--first-parent", "--max-count=5000", commit).decode().split()
+        return next((c for c in history[1:] if c in indexed), None)
+
+    def _has_lineage(self, commit: str) -> bool:
+        return bool(self.conn.execute("SELECT 1 FROM lineage_base WHERE commit_id=?", (commit,)).fetchone())
+
+    def _record_lineage(self, commit: str, base: str | None) -> None:
+        from seraph.lineage import match_symbols
+
+        old = list(self.iter_chunks(base)) if base else []
+        previous = dict(self.conn.execute(
+            "SELECT occurrence_id, lineage_id FROM lineage WHERE commit_id=? AND occurrence_id IS NOT NULL", (base,)
+        ).fetchall()) if base else {}
+        rows = []
+        for m in match_symbols(old, list(self.iter_chunks(commit))):
+            c = m.new or m.old
+            assert c is not None
+            lineage_id = previous.get(m.old.occurrence_id) if m.old else None
+            lineage_id = lineage_id or _digest("\0".join((c.commit, c.path, c.symbol or "", str(c.start_line))))[:16]
+            rows.append((commit, lineage_id, m.new.occurrence_id if m.new else None, c.path, c.symbol,
+                         m.change_type.value, m.old.occurrence_id if m.old else None, m.similarity))
+        with self.conn:
+            self.conn.execute("DELETE FROM lineage WHERE commit_id=?", (commit,))
+            self.conn.executemany("INSERT INTO lineage VALUES (?, ?, ?, ?, ?, ?, ?, ?)", rows)
+            self.conn.execute("INSERT OR REPLACE INTO lineage_base VALUES (?, ?)", (commit, base))
+
+    def ensure_lineage(self, commit: str) -> None:
+        """Record lineage for `commit` and any indexed ancestors that lack it, oldest first."""
+        pending: list[str] = []
+        current: str | None = commit
+        while current is not None and not self._has_lineage(current) and current not in pending:
+            pending.append(current)
+            current = self._lineage_base(current)
+        for c in reversed(pending):
+            self._record_lineage(c, self._lineage_base(c))
+
+    def _update_lineage(self, commit: str) -> None:
+        # An older commit indexed after its descendants changes their bases, so replay every commit in order.
+        descendants = [c for c in self.indexed_versions() if c != commit and self._has_lineage(c)
+                       and self._is_ancestor(commit, c)]
+        if not descendants:
+            self.ensure_lineage(commit)
+            return
+        for c in self.ordered_versions():
+            self._record_lineage(c, self._lineage_base(c))
+
+    def ordered_versions(self) -> list[str]:
+        """Indexed commits, ancestors before descendants."""
+        indexed = self.indexed_versions()
+        if not indexed:
+            return []
+        order = self._git("rev-list", "--topo-order", "--reverse", *indexed).decode().split()
+        position = {c: i for i, c in enumerate(order)}
+        return sorted(indexed, key=lambda c: position.get(c, -1))
+
+    def lineage_ids(self, commit: str) -> dict[str, str]:
+        """Occurrence id -> lineage id for one indexed commit."""
+        self.ensure_lineage(commit)
+        return dict(self.conn.execute(
+            "SELECT occurrence_id, lineage_id FROM lineage WHERE commit_id=? AND occurrence_id IS NOT NULL", (commit,)
+        ).fetchall())
+
+    def lineage_rows(self, lineage_id: str | None = None) -> list[sqlite3.Row]:
+        if lineage_id is None:
+            return self.conn.execute("SELECT * FROM lineage").fetchall()
+        return self.conn.execute("SELECT * FROM lineage WHERE lineage_id=?", (lineage_id,)).fetchall()
+
+    def lineage_bases(self) -> dict[str, str | None]:
+        return dict(self.conn.execute("SELECT commit_id, base FROM lineage_base").fetchall())
+
+    def get_chunk(self, occurrence_id: str) -> Chunk:
+        row = self.conn.execute(
+            "SELECT o.*, b.text, b.language FROM occurrences o JOIN blobs b ON b.content_hash = o.content_hash "
+            "WHERE o.occurrence_id=?", (occurrence_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(occurrence_id)
+        return Chunk(row["occurrence_id"], row["commit_id"], row["path"], row["symbol"], row["kind"],
+                     row["start_line"], row["end_line"], row["content_hash"], row["text"], row["language"])
+
+    def find_lineage_pair(self, symbol: str, a: str, b: str) -> tuple[Chunk | None, Chunk | None]:
+        """The occurrences of one symbol lineage in commits `a` and `b`; `symbol` is `path::symbol` or a name."""
+        self.ensure_lineage(a)
+        self.ensure_lineage(b)
+
+        def matching(commit: str) -> list[sqlite3.Row]:
+            rows = self.conn.execute(
+                "SELECT * FROM lineage WHERE commit_id=? AND occurrence_id IS NOT NULL ORDER BY path", (commit,)
+            ).fetchall()
+            return [r for r in rows if r["symbol"] and symbol in (
+                f"{r['path']}::{r['symbol']}", r["symbol"], r["symbol"].rsplit(".", 1)[-1])]
+
+        hits = matching(b) or matching(a)
+        if not hits:
+            return None, None
+        lineage_id = hits[0]["lineage_id"]
+
+        def occurrence(commit: str) -> Chunk | None:
+            row = self.conn.execute(
+                "SELECT occurrence_id FROM lineage WHERE commit_id=? AND lineage_id=? AND occurrence_id IS NOT NULL",
+                (commit, lineage_id),
+            ).fetchone()
+            return self.get_chunk(row[0]) if row else None
+
+        return occurrence(a), occurrence(b)
+
+    def commit_info(self, commits: list[str]) -> dict[str, tuple[int, str]]:
+        """Commit -> (commit timestamp, subject line)."""
+        if not commits:
+            return {}
+        out = {}
+        for line in self._git("show", "-s", "--format=%H%x00%ct%x00%s", *commits).decode("utf-8", "replace").splitlines():
+            parts = line.split("\0")
+            if len(parts) == 3:
+                out[parts[0]] = (int(parts[1]), parts[2])
+        return out
+
+    def tags(self) -> dict[str, str]:
+        """Commit -> tag name (annotated tags are peeled to their commit)."""
+        raw = self._git("for-each-ref", "--format=%(objectname)%00%(*objectname)%00%(refname:short)", "refs/tags")
+        out = {}
+        for line in raw.decode("utf-8", "replace").splitlines():
+            obj, peeled, name = line.split("\0")
+            out.setdefault(peeled or obj, name)
+        return out
 
     def _insert_refs(self, commit: str, path: str, text: str, spans) -> None:
         from seraph.graph.builder import extract_refs

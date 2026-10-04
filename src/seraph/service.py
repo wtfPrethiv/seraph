@@ -16,7 +16,7 @@ from seraph.types import ChangeSet, Chunk
 HISTORY = "*"
 
 
-def to_chunk(c: vindex.Chunk) -> Chunk:
+def to_chunk(c: vindex.Chunk, lineage_id: str | None = None) -> Chunk:
     """Ranking text is prefixed with path and symbol; results show the original `vindex.Chunk.text`."""
     return Chunk(
         chunk_hash=c.occurrence_id,
@@ -28,27 +28,33 @@ def to_chunk(c: vindex.Chunk) -> Chunk:
         start_line=c.start_line,
         end_line=c.end_line,
         version_id=c.commit,
-        # Until the index tracks lineage, a symbol's identity across commits is its path + name.
-        lineage_id=f"{c.path}::{c.symbol}" if c.symbol else None,
+        lineage_id=lineage_id,
     )
 
 
 class IndexChunkStore:
     """`ChunkStore` over a snapshot of index chunks; `head` is the commit that "HEAD" refers to."""
 
-    def __init__(self, chunks: Iterable[vindex.Chunk], head: str) -> None:
+    def __init__(
+        self, chunks: Iterable[vindex.Chunk], head: str, lineage: dict[str, str] | None = None
+    ) -> None:
         self.head = head
         self._source: dict[str, vindex.Chunk] = {}
         self._chunks: dict[str, Chunk] = {}
         self._by_commit: dict[str, list[str]] = {}
+        lineage = lineage or {}
         for c in chunks:
             self._source[c.occurrence_id] = c
-            self._chunks[c.occurrence_id] = to_chunk(c)
+            self._chunks[c.occurrence_id] = to_chunk(c, lineage.get(c.occurrence_id))
             self._by_commit.setdefault(c.commit, []).append(c.occurrence_id)
 
     @classmethod
     def from_index(cls, index: vindex.VersionedIndex, ref: str = "HEAD", include_history: bool = False) -> IndexChunkStore:
-        return cls(index.iter_chunks(ref, include_history), index.resolve(ref))
+        head = index.resolve(ref)
+        lineage: dict[str, str] = {}
+        for commit in index.indexed_versions() if include_history else [head]:
+            lineage.update(index.lineage_ids(commit))
+        return cls(index.iter_chunks(ref, include_history), head, lineage)
 
     def _commit(self, version: str) -> str:
         if version == "HEAD":
@@ -107,17 +113,19 @@ def repo_graph(index: vindex.VersionedIndex, ref: str = "HEAD"):
 
 
 def _pipeline(index: vindex.VersionedIndex, commit: str, include_history: bool, cfg: SeraphConfig):
+    from seraph.lineage import IndexVersionStore
     from seraph.retrieval.pipeline import Pipeline
 
-    scope = tuple(index.indexed_versions()) if include_history else (commit,)
-    key = (str(index.repo), scope, include_history, hashlib.sha1(cfg.model_dump_json().encode()).hexdigest())
+    # Indexing an older commit can re-link lineage, so every indexed version is part of the key.
+    scope = tuple(index.indexed_versions())
+    key = (str(index.repo), commit, scope, include_history, hashlib.sha1(cfg.model_dump_json().encode()).hexdigest())
     if key not in _PIPELINES:
         store = IndexChunkStore.from_index(index, commit, include_history)
         pipe = None
         if len(store):
             version = HISTORY if include_history else "HEAD"
             graph = repo_graph(index, commit) if cfg.retrieval.use_graph_expansion else None
-            pipe = Pipeline.from_config(cfg, store, version, graph=graph)
+            pipe = Pipeline.from_config(cfg, store, version, graph=graph, versions=IndexVersionStore(index))
         _PIPELINES[key] = (pipe, store)
     return _PIPELINES[key]
 
@@ -131,6 +139,8 @@ def search_index(
     cfg: SeraphConfig | None = None,
 ) -> dict[str, Any]:
     """Search an indexed version (indexing it first if needed) and return JSON-ready results."""
+    from seraph.retrieval.dedup import lineage_history
+
     t0 = time.perf_counter()
     stats = index.index_commit(ref)
     cfg = cfg or service_config()
@@ -154,9 +164,11 @@ def search_index(
         if seen is not None:
             seen["versions"].append(source.commit)
             continue
-        hit = {"score": round(r.score, 4), **asdict(source), "retrieval_scores": r.retrieval_scores}
+        hit = {"score": round(r.score, 4), **asdict(source), "lineage_id": r.lineage_id,
+               "retrieval_scores": r.retrieval_scores}
         if include_history:
             hit["versions"] = [source.commit]
+            hit["history"] = lineage_history(pipe.versions, r.lineage_id)
             by_content[source.content_hash] = hit
         if len(results) < limit:
             results.append(hit)

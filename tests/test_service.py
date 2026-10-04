@@ -44,7 +44,8 @@ def test_store_maps_index_chunks(repo):
         assert all(c.version_id == new for c in head)
         assert len(list(store.iter_chunks(old[:10]))) == 3 and len(list(store.iter_chunks("*"))) == 6
         parse = next(c for c in head if c.symbol == "parse_config")
-        assert parse.lineage_id == "config.py::parse_config" and store.get(parse.chunk_hash) == parse
+        old_parse = next(c for c in store.iter_chunks(old[:10]) if c.symbol == "parse_config")
+        assert parse.lineage_id == old_parse.lineage_id is not None and store.get(parse.chunk_hash) == parse
         changes = store.changed_since(old)
         assert [store.get(o).symbol for o in changes.added] == ["parse_config"]
         assert len(changes.unchanged) == 2

@@ -22,6 +22,18 @@ seraph-eval submit --config experiments/configs/submission.yaml --final --out ap
 
 Add `--set retrieval.dense_model=qwen3-emb-0.6b` for the Qwen3 row. The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
 
+### Try it on your own questions
+
+`seraph-eval ask` ranks the same 8,765 solutions with the submitted pipeline and prints the top matches with their code, per-view scores and the search time:
+
+```bash
+seraph-eval ask "Read an integer n and print the sum of the digits of n factorial."
+seraph-eval ask --file problem.txt --top-k 10
+seraph-eval ask                      # paste problems one by one, end each with a line holding only "."
+```
+
+Loading takes about 20 s (model and indexes); each question then takes well under a second. If the question is one of the dataset's queries, the known correct solution is marked.
+
 **How the test split was used.** The Qwen3 row was the first, frozen submission. We then compared embedders on dev, switched the dense view to BGE-Code-v1 and ran the test split again with the fusion weights unchanged (they were tuned for Qwen3, never on test). An intermediate run of BGE-Code-v1 alone, without BM25 or γ, scored 0.9795, so on this benchmark the extra views add nothing on top of a strong embedder. BGE-Code-v1 was trained on public code-retrieval data that likely overlaps the APPS train queries (dev_stdin 0.989); its test score matches the 98.08 its authors report.
 
 ## How retrieval works

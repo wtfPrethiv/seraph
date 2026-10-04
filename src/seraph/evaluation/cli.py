@@ -112,6 +112,97 @@ def submit(
     )
 
 
+def _known_answers(data) -> dict[str, set[str]]:
+    known: dict[str, set[str]] = {}
+    for queries, qrels in ((data.train_queries, data.train_qrels), (data.test_queries, data.test_qrels)):
+        for qid, text in queries.items():
+            known[" ".join(text.split())] = {d for d, rel in qrels.get(qid, {}).items() if rel > 0}
+    return known
+
+
+def _read_problem() -> str | None:
+    typer.echo(typer.style("\nPaste a problem, then a line with just '.' to search (q to quit):", fg="cyan"))
+    lines: list[str] = []
+    while True:
+        try:
+            line = input()
+        except EOFError:
+            return "\n".join(lines) or None
+        if not lines and line.strip().lower() in ("q", "quit", "exit"):
+            return None
+        if line.strip() == ".":
+            return "\n".join(lines)
+        lines.append(line)
+
+
+@app.command()
+def ask(
+    query: str | None = typer.Argument(None, help="problem text; omit it to paste problems interactively"),
+    file: str | None = typer.Option(None, "--file", help="read the problem text from a file"),
+    config: str = "experiments/configs/submission.yaml",
+    top_k: int = 5,
+    lines: int = 12,
+    set_: list[str] = typer.Option([], "--set", help="override, e.g. retrieval.dense_model=qwen3-emb-0.6b"),
+) -> None:
+    """Rank the 8,765 AppsRetrieval solutions for a programming problem with the submission pipeline."""
+    import sys
+    import time
+    from pathlib import Path
+
+    from seraph.config import load_config
+    from seraph.memory import InMemoryChunkStore
+    from seraph.retrieval.pipeline import Pipeline
+
+    t0 = time.perf_counter()
+    cfg = load_config(config, _parse_overrides(set_))
+    data = load_apps(cfg.cache_dir)
+    pipe = Pipeline.from_config(cfg, InMemoryChunkStore(data.chunks()))
+    pipe.search("warm up", top_k=1)
+    known = _known_answers(data)
+    typer.echo(
+        f"{cfg.name}: {len(data.corpus):,} solutions, dense model {cfg.retrieval.dense_model}, "
+        f"ready in {time.perf_counter() - t0:.1f}s"
+    )
+
+    def answer(problem: str) -> None:
+        problem = problem.strip()
+        if not problem:
+            return
+        start = time.perf_counter()
+        resp = pipe.search(problem, top_k=max(top_k, 100))
+        ms = (time.perf_counter() - start) * 1000
+        gold = known.get(" ".join(problem.split()), set())
+        ranked = [r.chunk_hash for r in resp.results]
+        title = " ".join(problem.split())[:90]
+        typer.echo(typer.style(f"\n{title}{'…' if len(problem) > 90 else ''}", bold=True))
+        note = f"searched {len(data.corpus):,} solutions in {ms:.0f} ms"
+        if gold:
+            hit = next((i for i, d in enumerate(ranked, 1) if d in gold), None)
+            note += f" · known correct solution at #{hit}" if hit else " · known correct solution not in the top 100"
+        typer.echo(typer.style(note, fg="cyan"))
+        for i, r in enumerate(resp.results[:top_k], 1):
+            views = "  ".join(f"{k} {v:.2f}" for k, v in r.retrieval_scores.items())
+            mark = typer.style("  ✓ correct", fg="green", bold=True) if r.chunk_hash in gold else ""
+            typer.echo(f"\n{typer.style(f'#{i}', bold=True)}  {r.chunk_hash}  score {r.score:.3f}{mark}")
+            if views:
+                typer.echo(typer.style(f"    {views}", dim=True))
+            code = data.corpus[r.chunk_hash].strip().splitlines()
+            for line in code[:lines]:
+                typer.echo(f"    {line}")
+            if len(code) > lines:
+                typer.echo(typer.style(f"    … {len(code) - lines} more lines", dim=True))
+
+    if file:
+        answer(Path(file).read_text(encoding="utf-8"))
+    elif query:
+        answer(query)
+    elif not sys.stdin.isatty():
+        answer(sys.stdin.read())
+    else:
+        while (problem := _read_problem()) is not None:
+            answer(problem)
+
+
 @app.command()
 def sweep(spec: str = "experiments/configs/dense_sweep.yaml", only: list[str] = typer.Option([])) -> None:
     """Dense model sweep; one model at a time, freeing GPU memory in between."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import os
 import time
@@ -128,6 +129,65 @@ def _pipeline(index: vindex.VersionedIndex, commit: str, include_history: bool, 
             pipe = Pipeline.from_config(cfg, store, version, graph=graph, versions=IndexVersionStore(index))
         _PIPELINES[key] = (pipe, store)
     return _PIPELINES[key]
+
+
+_CHANGE_ORDER = ("added", "modified", "renamed", "moved", "deleted")
+
+
+def _trim_diff(old: str, new: str, a: str, b: str, max_lines: int) -> str:
+    lines = list(difflib.unified_diff(old.splitlines(True), new.splitlines(True), a, b))
+    if len(lines) > max_lines:
+        lines = lines[:max_lines] + [f"... {len(lines) - max_lines} more diff lines\n"]
+    return "".join(lines)
+
+
+def compare_versions(
+    index: vindex.VersionedIndex, a: str, b: str, limit: int = 200, max_diff_lines: int = 40
+) -> dict[str, Any]:
+    """Symbol, dependency and commit differences between two versions (each indexed if needed)."""
+    from seraph.lineage import match_symbols, symbol_ref
+    from seraph.types import EdgeKind
+
+    ca, cb = index.index_commit(a).commit, index.index_commit(b).commit
+    matches = [m for m in match_symbols(list(index.iter_chunks(ca)), list(index.iter_chunks(cb)))
+               if m.change_type.value != "unchanged"]
+    matches.sort(key=lambda m: (_CHANGE_ORDER.index(m.change_type.value), symbol_ref(m.new or m.old)))
+    symbols = []
+    for m in matches:
+        c = m.new or m.old
+        entry: dict[str, Any] = {"change_type": m.change_type.value, "symbol": symbol_ref(c), "path": c.path,
+                                 "start_line": c.start_line, "end_line": c.end_line}
+        if m.old is not None and m.new is not None:
+            if symbol_ref(m.old) != symbol_ref(m.new):
+                entry["previous"] = symbol_ref(m.old)
+                entry["similarity"] = m.similarity
+            if m.old.content_hash != m.new.content_hash:
+                entry["diff"] = _trim_diff(m.old.text, m.new.text, f"{ca[:7]}:{symbol_ref(m.old)}",
+                                           f"{cb[:7]}:{symbol_ref(m.new)}", max_diff_lines)
+        symbols.append(entry)
+
+    renamed = {symbol_ref(m.old): symbol_ref(m.new) for m in matches if m.old is not None and m.new is not None}
+    old_edges = {(renamed.get(s, s), renamed.get(d, d), k) for s, d, k in repo_graph(index, ca).edges()
+                 if k != EdgeKind.DEFINES}
+    new_edges = {e for e in repo_graph(index, cb).edges() if e[2] != EdgeKind.DEFINES}
+
+    def edge_list(edges: set) -> list[dict[str, str]]:
+        return [{"src": s, "dst": d, "kind": str(k)} for s, d, k in sorted(edges)][:limit]
+
+    by_path: dict[str, list[str]] = {}
+    for entry in symbols:
+        by_path.setdefault(entry["path"], []).append(entry["symbol"])
+    commits = index.commits_between(ca, cb)
+    for commit in commits:
+        commit["symbols"] = [s for f in commit["files"] for s in by_path.get(f, [])]
+    return {
+        "from": ca,
+        "to": cb,
+        "summary": {t: sum(1 for m in matches if m.change_type.value == t) for t in _CHANGE_ORDER},
+        "symbols": symbols[:limit],
+        "dependencies": {"added": edge_list(new_edges - old_edges), "removed": edge_list(old_edges - new_edges)},
+        "commits": commits,
+    }
 
 
 def search_index(

@@ -522,6 +522,19 @@ class VersionedIndex:
                 out[parts[0]] = (int(parts[1]), parts[2])
         return out
 
+    def commits_between(self, a: str, b: str, limit: int = 100) -> list[dict]:
+        """Commits reachable from `b` but not `a`, newest first, with the supported files each touched."""
+        raw = self._git("log", f"--max-count={limit}", "--name-only", "--format=%x01%H%x00%an%x00%ct%x00%s",
+                        f"{a}..{b}").decode("utf-8", "replace")
+        out = []
+        for block in raw.split("\x01")[1:]:
+            header, *names = block.strip("\n").split("\n")
+            commit, author, timestamp, subject = header.split("\0")
+            files = [n for n in names if n and Path(n).suffix.lower() in SUPPORTED_SUFFIXES]
+            out.append({"commit": commit, "author": author, "timestamp": int(timestamp),
+                        "subject": subject, "files": files})
+        return out
+
     def tags(self) -> dict[str, str]:
         """Commit -> tag name (annotated tags are peeled to their commit)."""
         raw = self._git("for-each-ref", "--format=%(objectname)%00%(*objectname)%00%(refname:short)", "refs/tags")

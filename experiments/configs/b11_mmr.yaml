@@ -1,0 +1,5 @@
+extends: b3_hybrid_weighted.yaml
+name: b11_mmr
+retrieval:
+  use_mmr: true
+  mmr_lambda: 0.85

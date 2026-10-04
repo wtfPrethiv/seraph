@@ -9,7 +9,16 @@ from seraph.config import EMBEDDERS, SeraphConfig
 from seraph.protocols import ChunkStore, CodeGraph, Embedder, Reranker, Retriever, VersionStore
 from seraph.retrieval.fusion import fuse, rrf
 from seraph.retrieval.lexical import LexicalRetriever
-from seraph.types import AnalyzedQuery, Chunk, ScoredChunk, SearchResponse, SearchResult, SubQuery
+from seraph.types import (
+    AnalyzedQuery,
+    Chunk,
+    QueryType,
+    ScoredChunk,
+    SearchResponse,
+    SearchResult,
+    SubQuery,
+    View,
+)
 
 
 class Pipeline:
@@ -58,7 +67,8 @@ class Pipeline:
 
     def build(self) -> None:
         r = self.cfg.retrieval
-        chunks: list[Chunk] = list(self.store.iter_chunks(self.version))
+        multi_version = (r.use_dedup or r.use_evolution) and self.versions is not None
+        chunks: list[Chunk] = list(self.store.iter_chunks("*" if multi_version else self.version))
         if r.use_bm25:
             lex = LexicalRetriever(r.bm25_k1, r.bm25_b, r.bm25_stem)
             lex.index(chunks)
@@ -180,28 +190,76 @@ class Pipeline:
     def search_batch(self, queries: Sequence[AnalyzedQuery], k: int) -> list[list[ScoredChunk]]:
         return self._search_analyzed(self.analyze(queries), k)
 
-    def _search_analyzed(self, queries: Sequence[AnalyzedQuery], k: int) -> list[list[ScoredChunk]]:
+    def _search_analyzed(
+        self,
+        queries: Sequence[AnalyzedQuery],
+        k: int,
+        version: str | None = None,
+        include_history: bool = False,
+    ) -> list[list[ScoredChunk]]:
         r = self.cfg.retrieval
         depth = max(k, r.first_stage_k)
         per_view = self.retrieve_views(queries, depth)
         if r.use_graph_expansion and self.graph is not None:
             per_view["graph"] = self.graph_view(queries, self.fuse(queries, per_view))
+        if r.use_evolution and self.versions is not None:
+            per_view["evolution"] = self.evolution_view(queries, self.fuse(queries, per_view))
         results = self.fuse(queries, per_view)
         if r.use_reranker:
             results = self.rerank(queries, results)
+        if r.use_dedup:
+            results = self.dedup(queries, results, version or self.version, include_history)
+        if r.use_mmr:
+            results = self.diversify(results, k)
         return [h[:k] for h in results]
+
+    def evolution_view(
+        self, queries: Sequence[AnalyzedQuery], seeds: list[list[ScoredChunk]]
+    ) -> list[list[ScoredChunk]]:
+        from seraph.retrieval.dedup import evolution_view
+
+        assert self.versions is not None
+        return [evolution_view(q, s, self.versions) for q, s in zip(queries, seeds, strict=True)]
+
+    def dedup(
+        self,
+        queries: Sequence[AnalyzedQuery],
+        results: list[list[ScoredChunk]],
+        version: str,
+        include_history: bool,
+    ) -> list[list[ScoredChunk]]:
+        from seraph.retrieval.dedup import lineage_dedup
+
+        return [
+            lineage_dedup(h, self.versions, version, include_history or q.query_type == QueryType.EVOLUTIONARY)
+            for q, h in zip(queries, results, strict=True)
+        ]
+
+    def diversify(self, results: list[list[ScoredChunk]], k: int) -> list[list[ScoredChunk]]:
+        from seraph.retrieval.dedup import mmr
+
+        dense = self.views.get(View.SEMANTIC.value)
+        vectors = getattr(dense, "doc_vectors", None)
+        window = max(k, 20)
+        return [mmr(h[:window], self.cfg.retrieval.mmr_lambda, window, vectors) + h[window:] for h in results]
 
     def search(
         self, query: str, top_k: int = 10, version: str | None = None, include_history: bool = False
     ) -> SearchResponse:
+        from seraph.retrieval.dedup import lineage_history
+
         t0 = time.perf_counter()
         (aq,) = self.analyze([AnalyzedQuery.plain(query)])
-        hits = self._search_analyzed([aq], top_k)[0]
+        hits = self._search_analyzed([aq], top_k, version, include_history)[0]
+        results = [to_result(h) for h in hits]
+        if self.versions is not None and (include_history or aq.query_type == QueryType.EVOLUTIONARY):
+            for res in results:
+                res.history = lineage_history(self.versions, res.lineage_id)
         return SearchResponse(
             query=query,
             query_type=aq.query_type.value,
             version=version or self.version,
-            results=[to_result(h) for h in hits],
+            results=results,
             sub_queries=[s.text for s in aq.sub_queries],
             weights=self.weights_for(aq) if self.cfg.retrieval.fusion != "rrf" else {},
             latency_ms=(time.perf_counter() - t0) * 1000,

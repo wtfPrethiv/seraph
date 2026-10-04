@@ -101,14 +101,15 @@ def load_apps(cache_dir: str | Path = ".seraph_cache") -> AppsData:
 
     import mteb
 
-    task = mteb.get_task(TASK_NAME)
-    task.load_data(eval_splits=["train", "test"])
+    task = mteb.get_task(TASK_NAME, eval_splits=["train", "test"])
+    task.load_data()
+    splits = task.dataset["default"]
     data = AppsData(
-        corpus=dict(task.corpus["test"]),
-        train_queries=dict(task.queries["train"]),
-        train_qrels={q: dict(r) for q, r in task.relevant_docs["train"].items()},
-        test_queries=dict(task.queries["test"]),
-        test_qrels={q: dict(r) for q, r in task.relevant_docs["test"].items()},
+        corpus={r["id"]: r["text"] for r in splits["test"]["corpus"]},
+        train_queries={r["id"]: r["text"] for r in splits["train"]["queries"]},
+        train_qrels={q: dict(r) for q, r in splits["train"]["relevant_docs"].items()},
+        test_queries={r["id"]: r["text"] for r in splits["test"]["queries"]},
+        test_qrels={q: dict(r) for q, r in splits["test"]["relevant_docs"].items()},
         revision=task.metadata.dataset["revision"],
     )
     cache.parent.mkdir(parents=True, exist_ok=True)
@@ -142,16 +143,15 @@ def run_search(
 
 def mteb_scores(qrels: dict[str, dict[str, int]], run: Run, ks: Sequence[int] = (1, 10, 100)) -> dict[str, float]:
     """Score a run with MTEB's own (pytrec_eval-based) evaluator."""
-    from mteb.evaluation.evaluators.RetrievalEvaluator import RetrievalEvaluator
+    from mteb._evaluators.retrieval_metrics import calculate_retrieval_scores
 
     run = {q: dict(d) for q, d in run.items()}
-    ndcg, _map, recall, _p, _naucs = RetrievalEvaluator.evaluate(qrels, run, list(ks))
-    mrr, _ = RetrievalEvaluator.evaluate_custom(qrels, run, list(ks), "mrr")
+    res = calculate_retrieval_scores(run, qrels, list(ks))
     out = {}
     for k in ks:
-        out[f"ndcg@{k}"] = ndcg[f"NDCG@{k}"]
-        out[f"recall@{k}"] = recall[f"Recall@{k}"]
-        out[f"mrr@{k}"] = mrr[f"MRR@{k}"]
+        out[f"ndcg@{k}"] = res.ndcg[f"NDCG@{k}"]
+        out[f"recall@{k}"] = res.recall[f"Recall@{k}"]
+        out[f"mrr@{k}"] = res.mrr[f"MRR@{k}"]
     return out
 
 
@@ -166,44 +166,60 @@ def score_run(
     return {**m, **latency_stats(latencies)}
 
 
-class SeraphMTEBModel:
-    """Adapter so `mteb.MTEB(tasks=[...]).run(model)` drives Seraph's own search.
+def _row_text(row: dict[str, Any]) -> str:
+    return " ".join(p for p in (row.get("title") or "", row["text"]) if p)
 
-    mteb 1.x routes models whose `mteb_model_meta.name == "bm25s"` to `model.search(...)`
-    instead of encoding; that is the only hook for custom first-stage retrieval there.
+
+class SeraphMTEBModel:
+    """mteb 2.x `SearchProtocol` model: `mteb.evaluate` hands it the corpus and queries, and the
+    whole Seraph pipeline (every view, fusion, rerank) produces the ranking.
+
+    It must not define `encode`, or mteb would wrap it as a plain embedding model instead.
     """
 
-    def __init__(self, build_search: Callable[[list[Chunk]], SearchFn], name: str = "seraph") -> None:
-        from mteb.model_meta import ModelMeta
+    def __init__(
+        self,
+        build_search: Callable[[list[Chunk]], SearchFn],
+        name: str = "seraph",
+        revision: str = "dev",
+        batch_size: int = 64,
+    ) -> None:
+        from mteb.models.model_meta import ModelMeta
 
         self.build_search = build_search
+        self.batch_size = batch_size
+        self._search: SearchFn | None = None
         self.mteb_model_meta = ModelMeta(
-            name="bm25s",
-            revision=name,
-            release_date=None,
-            languages=None,
             loader=None,
+            name=f"seraph/{name}",
+            revision=revision,
+            release_date=None,
+            languages=["eng-Latn", "python-Code"],
             n_parameters=None,
             memory_usage_mb=None,
             max_tokens=None,
             embed_dim=None,
-            license=None,
+            license="mit",
             open_weights=True,
             public_training_code=None,
             public_training_data=None,
             framework=[],
+            reference=None,
             similarity_fn_name=None,
-            use_instructions=False,
+            use_instructions=True,
             training_datasets=None,
         )
 
-    def search(
-        self, corpus: dict[str, dict[str, str]], queries: dict[str, str], top_k: int, **_: Any
-    ) -> dict[str, dict[str, float]]:
-        texts = {d: (v.get("title", "") + " " + v["text"]) if isinstance(v, dict) else v for d, v in corpus.items()}
-        search_fn = self.build_search(corpus_to_chunks(texts))
-        run, _ = run_search(search_fn, queries, top_k)
-        return run
+    def index(self, corpus, *, task_metadata, hf_split, hf_subset, encode_kwargs, num_proc=None) -> None:
+        self._search = self.build_search(corpus_to_chunks({r["id"]: _row_text(r) for r in corpus}))
 
-    def encode(self, *args: Any, **kwargs: Any):  # pragma: no cover - never used for bm25s path
-        raise NotImplementedError
+    def search(
+        self, queries, *, task_metadata, hf_split, hf_subset, top_k, encode_kwargs, top_ranked=None, num_proc=None
+    ) -> dict[str, dict[str, float]]:
+        if self._search is None:
+            raise RuntimeError("index() must be called before search()")
+        run, _ = run_search(self._search, {r["id"]: r["text"] for r in queries}, top_k, self.batch_size)
+        if top_ranked:
+            allowed = {q: set(top_ranked.get(q, hits)) for q, hits in run.items()}
+            run = {q: {d: s for d, s in hits.items() if d in allowed[q]} for q, hits in run.items()}
+        return run

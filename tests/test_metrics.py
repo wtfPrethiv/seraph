@@ -48,6 +48,30 @@ def test_matches_mteb():
         assert ours[k] == pytest.approx(v, abs=1e-4), k
 
 
+def test_mteb_search_protocol_adapter():
+    pytest.importorskip("mteb")
+    from mteb.models.models_protocols import EncoderProtocol, SearchProtocol
+
+    from seraph.evaluation.coir import SeraphMTEBModel
+    from seraph.retrieval.lexical import LexicalRetriever
+
+    def build(chunks):
+        lex = LexicalRetriever()
+        lex.index(chunks)
+        return lex.search_batch
+
+    model = SeraphMTEBModel(build, "bm25-test")
+    assert isinstance(model, SearchProtocol) and not isinstance(model, EncoderProtocol)
+    kw = {"task_metadata": None, "hf_split": "test", "hf_subset": "default", "encode_kwargs": {}}
+    corpus = [
+        {"id": "d1", "title": "", "text": "def read_grid(): return [input() for _ in range(n)]"},
+        {"id": "d2", "title": "", "text": "import heapq\nheapq.heappush(pq, (dist, node))"},
+    ]
+    model.index(corpus, **kw)
+    run = model.search([{"id": "q1", "text": "shortest path with a heapq priority queue"}], top_k=2, **kw)
+    assert max(run["q1"], key=run["q1"].get) == "d2"
+
+
 def test_runfile_roundtrip(tmp_path):
     run, _ = _random_run(5, 20)
     write_run(run, tmp_path / "r.trec")

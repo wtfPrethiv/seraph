@@ -65,6 +65,49 @@ def run(
 
 
 @app.command()
+def submit(
+    config: str = "experiments/configs/submission.yaml",
+    final: bool = typer.Option(False, "--final", help="Required: this scores the AppsRetrieval test split"),
+    out: str = "appsretrieval_results.json",
+    batch_size: int = 64,
+    set_: list[str] = typer.Option([], "--set", help="override, e.g. retrieval.rerank_depth=10"),
+) -> None:
+    """Run `mteb.evaluate` on AppsRetrieval (test split) with the full pipeline; write the upload JSON."""
+    import time
+    from pathlib import Path
+
+    import mteb
+
+    from seraph.config import load_config
+    from seraph.evaluation.coir import TASK_NAME, SeraphMTEBModel
+    from seraph.evaluation.experiment import config_hash, set_seed
+    from seraph.memory import InMemoryChunkStore
+    from seraph.retrieval.pipeline import Pipeline
+
+    if not final:
+        typer.echo("submit scores the test split; pass --final once the config is frozen", err=True)
+        raise typer.Exit(2)
+    cfg = load_config(config, _parse_overrides(set_))
+    set_seed(cfg.seed)
+
+    def build_search(chunks):
+        return Pipeline.from_config(cfg, InMemoryChunkStore(chunks)).search_batch
+
+    model = SeraphMTEBModel(build_search, cfg.name, config_hash(cfg), batch_size)
+    t0 = time.perf_counter()
+    result = mteb.evaluate(
+        model, [mteb.get_task(TASK_NAME)], encode_kwargs={"batch_size": batch_size}, overwrite_strategy="always"
+    )
+    task_result = list(result.task_results)[0]
+    task_result.to_disk(Path(out))  # to_dict() keeps a datetime that json.dump rejects
+    scores = task_result.scores["test"][0]
+    typer.echo(
+        f"{cfg.name}: ndcg@10={scores['ndcg_at_10']:.4f} mrr@10={scores['mrr_at_10']:.4f} "
+        f"({time.perf_counter() - t0:.0f}s) -> {out}"
+    )
+
+
+@app.command()
 def sweep(spec: str = "experiments/configs/dense_sweep.yaml", only: list[str] = typer.Option([])) -> None:
     """Dense model sweep; one model at a time, freeing GPU memory in between."""
     import gc

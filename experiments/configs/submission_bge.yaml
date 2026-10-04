@@ -1,0 +1,5 @@
+extends: b2_dense.yaml
+name: submission_bge
+allow_local_models: true
+retrieval:
+  dense_model: bge-code-v1

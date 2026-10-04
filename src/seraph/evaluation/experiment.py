@@ -83,7 +83,8 @@ def run_experiment(
         },
         "config": cfg.model_dump(),
     }
+    stem = f"{cfg.name}__{split}" + (f"__n{max_queries}" if max_queries else "")
     results_dir.mkdir(parents=True, exist_ok=True)
-    (results_dir / f"{cfg.name}__{split}.json").write_text(json.dumps(result, indent=2))
-    write_run(run, RUNS_DIR / f"{cfg.name}__{split}.trec", tag=cfg.name)
+    (results_dir / f"{stem}.json").write_text(json.dumps(result, indent=2))
+    write_run(run, RUNS_DIR / f"{stem}.trec", tag=cfg.name)
     return result

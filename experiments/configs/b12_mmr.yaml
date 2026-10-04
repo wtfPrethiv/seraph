@@ -1,0 +1,5 @@
+extends: b9_structural.yaml
+name: b12_mmr
+retrieval:
+  use_mmr: true
+  mmr_lambda: 0.85

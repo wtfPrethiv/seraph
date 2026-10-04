@@ -1,0 +1,27 @@
+# One component at a time on AppsRetrieval. `seraph-eval ablate` runs each rung on every split
+# (or the rung's own `splits`) and renders experiments/results/ablation.md.
+splits: [dev, dev_stdin]
+ladder:
+  - label: BM25 (code-aware tokenizer)
+    config: b1_bm25.yaml
+  - label: dense only (Qwen3-Embedding-0.6B, cached vectors)
+    config: b2_dense.yaml
+  - label: + fusion (weighted minmax, lexical 0.2 / semantic 0.8)
+    config: b3_hybrid_weighted.yaml
+  - label: + structural gamma view (0.2)
+    config: b9_structural.yaml
+  - label: + adaptive weights (rule-based)
+    config: b8_adaptive_rules.yaml
+  - label: + MMR (lambda 0.85), on the structural config
+    config: b12_mmr.yaml
+    base: + structural gamma view (0.2)
+  - label: + Gemini listwise rerank (depth 20), on the structural config
+    config: b5_rerank.yaml
+    base: + structural gamma view (0.2)
+    api: true
+    splits: [dev_stdin]
+not_applicable:
+  - label: + graph expansion (delta)
+    reason: AppsRetrieval snippets have no call graph; evaluated on SeraphBench
+  - label: + lineage dedup / evolution view (epsilon)
+    reason: AppsRetrieval has a single version per snippet; evaluated on SeraphBench

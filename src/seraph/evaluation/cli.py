@@ -308,6 +308,27 @@ def tune_adaptive(
     typer.echo(f"saved best CV variant ({kind}, top_cells={n}) trained on all {split} queries -> {model_out}")
 
 
+@app.command()
+def ablate(
+    spec: str = "experiments/configs/ablation.yaml",
+    final: bool = typer.Option(False, "--final", help="Run every rung once on the AppsRetrieval test split"),
+    skip_api: bool = typer.Option(False, "--skip-api", help="Skip rungs that call paid/quota-limited APIs"),
+    force: bool = typer.Option(False, "--force", help="Rerun even when a result with the same config hash exists"),
+    out: str | None = None,
+) -> None:
+    """Run the ablation ladder and write a markdown table."""
+    from pathlib import Path
+
+    from seraph.evaluation.ablations import Ablation, render, run_ablation
+
+    ab = Ablation.load(spec)
+    md = render(ab, run_ablation(ab, final, skip_api, force), final)
+    typer.echo(md)
+    path = Path(out or f"experiments/results/ablation{'_test' if final else ''}.md")
+    path.write_text(md, encoding="utf-8")
+    typer.echo(f"-> {path}")
+
+
 @app.command("tune-bm25")
 def tune_bm25(split: str = "dev_stdin", cache_dir: str = ".seraph_cache") -> None:
     """Grid-search BM25 k1/b/stemming on a tuning split."""

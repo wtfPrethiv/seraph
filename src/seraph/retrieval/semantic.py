@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -228,10 +229,17 @@ class CachedEmbedder:
         self.spec = spec
         self.dir = Path(cache_dir) / "embeddings" / inner.name
         self.dir.mkdir(parents=True, exist_ok=True)
+        self._rows: dict[str, dict[str, tuple[Path, int]]] = {}
 
     @property
     def dim(self) -> int:
         return self.inner.dim
+
+    def _salt(self, kind: str) -> str:
+        salt = f"{kind}|{self.revision}|"
+        if self.spec:
+            salt += f"{self.spec.query_prefix}|{self.spec.doc_prefix}|{self.spec.max_len}"
+        return salt
 
     def _key(self, kind: str, texts: Sequence[str]) -> Path:
         h = hashlib.sha1()
@@ -242,17 +250,62 @@ class CachedEmbedder:
             h.update(hashlib.sha1(t.encode()).digest())
         return self.dir / f"{kind}_{h.hexdigest()[:20]}.npy"
 
+    @staticmethod
+    def _ids(texts: Sequence[str]) -> list[str]:
+        return [hashlib.sha1(t.encode()).hexdigest() for t in texts]
+
+    def _write_keys(self, path: Path, kind: str, texts: Sequence[str]) -> None:
+        keys = path.with_suffix(".keys.json")
+        if not keys.exists():
+            keys.write_text(json.dumps({"salt": self._salt(kind), "ids": self._ids(texts)}))
+            self._rows.pop(kind, None)
+
+    def _row_index(self, kind: str) -> dict[str, tuple[Path, int]]:
+        """text id -> (matrix file, row) across every cached matrix with the same model/prefix salt."""
+        if kind not in self._rows:
+            index: dict[str, tuple[Path, int]] = {}
+            for keys in sorted(self.dir.glob(f"{kind}_*.keys.json")):
+                meta = json.loads(keys.read_text())
+                if meta.get("salt") != self._salt(kind):
+                    continue
+                mat = keys.with_name(keys.name.replace(".keys.json", ".npy"))
+                for row, tid in enumerate(meta["ids"]):
+                    index.setdefault(tid, (mat, row))
+            self._rows[kind] = index
+        return self._rows[kind]
+
+    def _assemble(self, kind: str, texts: Sequence[str]) -> np.ndarray | None:
+        index = self._row_index(kind)
+        found = [index.get(t) for t in self._ids(texts)]
+        if not found or any(f is None for f in found):
+            return None
+        mats: dict[Path, np.ndarray] = {}
+        rows = []
+        for path, row in found:
+            if path not in mats:
+                mats[path] = np.load(path, mmap_mode="r")
+            rows.append(np.asarray(mats[path][row]))
+        return np.stack(rows)
+
     def _cached(self, kind: str, texts: Sequence[str], fn) -> np.ndarray:
         path = self._key(kind, texts)
         if path.exists():
+            self._write_keys(path, kind, texts)
             return np.load(path)
+        mat = self._assemble(kind, texts)
+        if mat is not None:
+            return mat
         mat = fn(texts)
         np.save(path, mat)
+        self._write_keys(path, kind, texts)
         return mat
 
     def encode_queries(self, texts: Sequence[str]) -> np.ndarray:
-        if not self.cache_queries or len(texts) < 8:  # interactive queries: not worth a cache file each
+        if not self.cache_queries:
             return self.inner.encode_queries(texts)
+        if len(texts) < 8:  # interactive queries: reuse cached rows, never write a file per call
+            mat = self._assemble("q", texts)
+            return mat if mat is not None else self.inner.encode_queries(texts)
         return self._cached("q", texts, self.inner.encode_queries)
 
     def encode_documents(self, texts: Sequence[str]) -> np.ndarray:

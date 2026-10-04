@@ -1,6 +1,6 @@
-extends: b3_hybrid_weighted.yaml
+extends: b9_structural.yaml
 name: b5_rerank
 retrieval:
   use_reranker: true
-  reranker_model: bge-reranker-v2-m3
-  rerank_depth: 100
+  reranker_model: gemini-flash-lite-listwise
+  rerank_depth: 20

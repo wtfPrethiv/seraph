@@ -12,21 +12,21 @@
     "ndcg@100": 0.4032684047830592,
     "mrr@100": 0.3502173266864185,
     "recall@100": 0.612,
-    "latency_p50_ms": 0.7267703126672131,
-    "latency_p95_ms": 1.1833687503894907,
-    "latency_mean_ms": 0.8143557000148576
+    "latency_p50_ms": 0.6155140627015498,
+    "latency_p95_ms": 1.2696078124463384,
+    "latency_mean_ms": 0.7606456000357866
   },
-  "index_seconds": 0.8998621000209823,
+  "index_seconds": 0.9099824999866541,
   "meta": {
-    "git_sha": "b04d4d5",
-    "config_hash": "f4453a9e29",
+    "git_sha": "6090e7f",
+    "config_hash": "986f41705d",
     "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
     "models": {
       "lexical": "lexical"
     },
     "seed": 42,
     "python": "3.12.15",
-    "timestamp": "2026-10-04T09:47:47"
+    "timestamp": "2026-10-04T10:20:01"
   },
   "config": {
     "name": "b1_bm25",
@@ -34,6 +34,7 @@
     "device": "auto",
     "cache_dir": ".seraph_cache",
     "cache_query_embeddings": true,
+    "allow_local_models": false,
     "retrieval": {
       "first_stage_k": 100,
       "use_bm25": true,

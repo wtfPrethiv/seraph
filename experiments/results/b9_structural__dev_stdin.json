@@ -12,13 +12,13 @@
     "ndcg@100": 0.7607433167378383,
     "mrr@100": 0.7001516607081782,
     "recall@100": 0.9730538922155688,
-    "latency_p50_ms": 4.2316656254115514,
-    "latency_p95_ms": 5.119545312481932,
-    "latency_mean_ms": 4.305989221491276
+    "latency_p50_ms": 5.171695312583324,
+    "latency_p95_ms": 5.497653124621138,
+    "latency_mean_ms": 5.175644610705228
   },
-  "index_seconds": 4.666665400000056,
+  "index_seconds": 5.663300699990941,
   "meta": {
-    "git_sha": "12bd6ab",
+    "git_sha": "6090e7f",
     "config_hash": "079a33cd5e",
     "dataset_revision": "f22508f96b7a36c2415181ed8bb76f76e04ae2d5",
     "models": {
@@ -27,7 +27,7 @@
     },
     "seed": 42,
     "python": "3.12.15",
-    "timestamp": "2026-10-04T10:10:00"
+    "timestamp": "2026-10-04T10:22:46"
   },
   "config": {
     "name": "b9_structural",

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -46,15 +47,25 @@ class RateLimiter:
             self._next = max(now, self._next) + self.interval
 
 
+class QuotaExhaustedError(RuntimeError):
+    """A daily quota is used up; retrying today will not help. Switch keys or wait."""
+
+
+_RETRY_DELAY = re.compile(r"retry(?:Delay)?['\"]?\s*[:=]?\s*['\"]?(\d+(?:\.\d+)?)s", re.I)
+
+
 def with_retries[T](fn: Callable[[], T], attempts: int = 8, base_delay: float = 4.0) -> T:
     for i in range(attempts):
         try:
             return fn()
         except Exception as e:
             msg = str(e)
+            if "PerDay" in msg:
+                raise QuotaExhaustedError(f"daily API quota exhausted: {msg[:300]}") from e
             if i == attempts - 1 or not any(code in msg for code in _RETRYABLE):
                 raise
-            delay = min(base_delay * 2**i, 120.0)
+            hint = _RETRY_DELAY.search(msg)
+            delay = float(hint.group(1)) + 1 if hint else min(base_delay * 2**i, 120.0)
             log.warning("API call failed (%s); retrying in %.0fs", msg[:120], delay)
             time.sleep(delay)
     raise AssertionError("unreachable")

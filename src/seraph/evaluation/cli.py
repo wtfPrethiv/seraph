@@ -16,6 +16,10 @@ app = typer.Typer(no_args_is_help=True, add_completion=False)
 @app.callback()
 def main() -> None:
     """Seraph evaluation commands."""
+    import logging
+
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    logging.getLogger("seraph").setLevel(logging.INFO)
 
 
 @app.command()

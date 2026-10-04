@@ -1,0 +1,4 @@
+extends: b2_dense.yaml
+name: b2_dense_gemini-embedding-001
+retrieval:
+  dense_model: gemini-embedding-001

@@ -103,3 +103,18 @@ def test_retries_then_succeeds(monkeypatch):
     with pytest.raises(ValueError):
         with_retries(lambda: (_ for _ in ()).throw(ValueError("bad request")))
     RateLimiter(0).wait()
+
+
+def test_daily_quota_stops_immediately(monkeypatch):
+    from seraph.backends.common import QuotaExhaustedError
+
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    calls = {"n": 0}
+
+    def exhausted():
+        calls["n"] += 1
+        raise RuntimeError("429 RESOURCE_EXHAUSTED quotaId: GenerateRequestsPerDayPerProjectPerModel-FreeTier")
+
+    with pytest.raises(QuotaExhaustedError):
+        with_retries(exhausted)
+    assert calls["n"] == 1

@@ -43,7 +43,7 @@ EMBEDDERS: dict[str, ModelSpec] = {
             name="gemini-embedding-001",
             hf_id="gemini-embedding-001",
             backend="gemini_embed",
-            options={"output_dim": 768, "query_task": "CODE_RETRIEVAL_QUERY", "doc_task": "RETRIEVAL_DOCUMENT", "rpm": 90, "batch": 100},
+            options={"output_dim": 768, "query_task": "CODE_RETRIEVAL_QUERY", "doc_task": "RETRIEVAL_DOCUMENT", "rpm": 0.98, "batch": 100},
         ),
         ModelSpec(name="codebert", hf_id="microsoft/codebert-base", backend="hf", params_m=125),
         ModelSpec(name="graphcodebert", hf_id="microsoft/graphcodebert-base", backend="hf", params_m=125),
@@ -100,13 +100,13 @@ RERANKERS: dict[str, ModelSpec] = {
     for m in [
         ModelSpec(
             name="gemini-flash-lite-listwise",
-            hf_id="gemini-2.5-flash-lite",
+            hf_id="gemini-3.5-flash-lite",
             backend="gemini_rerank",
             options={"window": 20, "rpm": 14, "doc_chars": 1200, "query_chars": 3000},
         ),
         ModelSpec(
             name="gemini-flash-listwise",
-            hf_id="gemini-2.5-flash",
+            hf_id="gemini-3.5-flash",
             backend="gemini_rerank",
             options={"window": 20, "rpm": 9, "doc_chars": 1200, "query_chars": 3000},
         ),
@@ -185,7 +185,7 @@ class LLMConfig(BaseModel):
     """Any OpenAI-compatible endpoint; defaults to Gemini's."""
 
     base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
-    model: str = "gemini-2.5-flash-lite"
+    model: str = "gemini-3.5-flash-lite"
     api_key_env: str = "GEMINI_API_KEY"
     temperature: float = 0.0
 

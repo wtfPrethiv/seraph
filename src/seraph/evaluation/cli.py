@@ -158,7 +158,7 @@ def ask(
     cfg = load_config(config, _parse_overrides(set_))
     data = load_apps(cfg.cache_dir)
     pipe = Pipeline.from_config(cfg, InMemoryChunkStore(data.chunks()))
-    pipe.search("warm up", top_k=1)
+    pipe.search(" ".join(["Read an integer n, then n integers, and print the answer for each test case."] * 6), top_k=1)
     known = _known_answers(data)
     typer.echo(
         f"{cfg.name}: {len(data.corpus):,} solutions, dense model {cfg.retrieval.dense_model}, "

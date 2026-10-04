@@ -53,7 +53,7 @@ seraph-eval ask --file problem.txt --top-k 10
 seraph-eval ask        # paste problems one by one; end each with a line holding only "."
 ```
 
-Loading takes about 20 s once the corpus is embedded. A new question then takes about 0.2 s on an Apple M5 GPU and about 0.9 s on CPU, most of it spent encoding the question; a question asked before is served from the query cache in milliseconds. See [Performance](#performance). Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
+Loading takes about 20 s once the corpus is embedded. A new question then takes about 0.2 s on an Apple M5 GPU and about 0.9 s on CPU, most of it spent encoding the question; a question asked before is served from the query cache in milliseconds. On CPU the first question after loading can still take several seconds while the model warms up. See [Performance](#performance). Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
 
 **4. P1: retrieval across versions** on this repository, between commit `6bc99db` and `da76e47` (the commit that added `seraph-eval ask`)
 

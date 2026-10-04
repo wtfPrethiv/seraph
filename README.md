@@ -1,6 +1,24 @@
 # seraph
 Seraph - a query-adaptive code intelligence engine that combines semantic, lexical, structural, dependency, and Git-aware retrieval to help coding agents understand large, evolving codebases.
 
+## Results
+
+CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored once through `mteb.evaluate`. The upload JSON is attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0).
+
+| config | embedder | nDCG@10 | MRR@10 | Recall@10 | Recall@100 |
+|---|---|---|---|---|---|
+| `submission_bge.yaml` | BGE-Code-v1 (1.5B), local | **0.9795** | **0.9733** | 0.9976 | 0.9989 |
+| `submission.yaml` | BM25 + Qwen3-Embedding-0.6B + structural γ | 0.7487 | 0.7039 | 0.8882 | 0.9835 |
+
+Both run locally with no API calls. Reproduce the submission:
+
+```bash
+uv sync --extra eval --extra cpu                 # --extra gpu on a CUDA machine
+seraph-eval submit --config experiments/configs/submission_bge.yaml --final --out appsretrieval_results.json
+```
+
+The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
+
 ## How retrieval works
 
 ```
@@ -34,7 +52,7 @@ search("where is the config parsed", repo="myrepo", top_k=10, include_history=Tr
 
 ## Versioned index, CLI and MCP server
 
-`seraph.index.VersionedIndex` stores Python function/class chunks (plus file chunks for JavaScript, TypeScript and Go) per Git commit in SQLite. Files unchanged since an already-indexed parent commit are reused instead of re-parsed.
+`seraph.index.VersionedIndex` stores symbol-level chunks per Git commit in SQLite: functions and classes for Python, and functions, classes, methods, interfaces and types for TypeScript, JavaScript and Go (tree-sitter). Files unchanged since an already-indexed parent commit are reused instead of re-parsed.
 
 `seraph.service` connects the two halves. `IndexChunkStore` exposes an index snapshot as a `ChunkStore`, and `search_index()` ranks it with the `Pipeline`, caching one built pipeline per repo, commit set and config. The CLI and MCP server both go through it. By default the pipeline is BM25 with the code-aware tokenizer and makes no API calls; set `SERAPH_CONFIG=configs/service_hybrid.yaml` to add Gemini embeddings. `seraph search --engine baseline` runs the index's original keyword search for comparison. Until the index tracks lineage, chunks are linked across commits by `path::symbol`.
 
@@ -46,7 +64,7 @@ seraph --repo /path/to/repo search "where is the input normalized" --ref HEAD
 seraph --repo /path/to/repo versions
 ```
 
-The database defaults to `REPO/.seraph/index.sqlite`, which Git ignores; `--db PATH` moves it. `index` reports how many files it parsed and how many chunks it reused, so index a parent commit before its child to get reuse. `search --history` searches every indexed commit. Output is JSON with the commit, path, line range, code and score.
+The database defaults to `REPO/.seraph/index.sqlite`, which Git ignores; `--db PATH` moves it. `index` reports how many files it parsed and how many chunks it reused, so index a parent commit before its child to get reuse. `search --history` searches every indexed commit. `search` prints a ranked list with index and search timings; `--json` prints the raw result. With `--history`, identical code found in several versions is returned once, with every version it appears in listed under `versions`; code that changed stays separate.
 
 ```python
 from seraph import VersionedIndex
@@ -64,21 +82,20 @@ Each `seraph.index.Chunk` (distinct from `seraph.types.Chunk`) has an `occurrenc
 uv sync --extra mcp
 ```
 
-Merge this entry into the existing `mcpServers` object of `~/.morpheus/config.json` (do not replace other servers):
+In Morpheus, run `/seraph setup /path/to/seraph` once; it writes the server entry to `~/.morpheus/config.json` next to your other servers. Any other MCP client can use the same entry:
 
 ```json
 {
   "mcpServers": {
     "seraph": {
-      "command": "/absolute/path/to/python3",
-      "args": ["-m", "seraph.server"],
-      "env": {"SERAPH_REPO": "/absolute/path/to/repository"}
+      "command": "/path/to/seraph/.venv/bin/python",
+      "args": ["-m", "seraph.server"]
     }
   }
 }
 ```
 
-The tools appear as `mcp_seraph_search_code`, `mcp_seraph_search_at_version` and `mcp_seraph_index_repository`. A search indexes the requested version on first use and returns path, commit, line range, snippet and score. `SERAPH_DB` optionally overrides the database path.
+The server searches the Git repository it is started in (`SERAPH_REPO` overrides that, `SERAPH_DB` the database path). Tools: `search_code`, `search_at_version`, `search_history` and `index_repository`; a search indexes the requested version on first use and returns path, commit, line range, snippet, score and timings. Morpheus renders the results as ranked cards, and `/versus <question>` runs the same question through Seraph and grep side by side.
 
 ## Models: API first, local optional
 
@@ -87,9 +104,10 @@ The tools appear as `mcp_seraph_search_code`, `mcp_seraph_search_at_version` and
 | Dense embeddings | `gemini-embedding-001` (768-d) | Gemini API |
 | Reranker | `gemini-3.5-flash-lite`, listwise over a window of 20 | Gemini API |
 | LLM query analyzer (`analyzer: llm`) | `gemini-3.5-flash-lite` via the OpenAI-compatible endpoint | Gemini API |
-| Local alternatives | Qwen3-Embedding-0.6B, CodeSage, bge/jina/Qwen3 rerankers | GPU, only with `allow_local_models: true` |
+| Local embedders | BGE-Code-v1, EmbeddingGemma-300M, Qwen3-Embedding-0.6B/4B, CodeSage, and others | CPU, CUDA or Apple MPS, with `allow_local_models: true` |
+| Local rerankers | bge/jina/Qwen3 rerankers | same |
 
-Local model loading is off by default (`LocalModelsDisabledError`). The AppsRetrieval experiments below use Qwen3-Embedding-0.6B vectors that were computed once and cached in `.seraph_cache/embeddings/`. They are read from disk without loading the model, because embedding the 8,765-document corpus on the Gemini free tier (1,000 texts per day) would take about nine days. All API responses (embeddings, rerank orders, LLM analyses) are cached in SQLite or JSON under `.seraph_cache/`, so reruns are free.
+Local model loading is off by default (`LocalModelsDisabledError`); the submission configs turn it on. The AppsRetrieval experiments below use Qwen3-Embedding-0.6B vectors that were computed once and cached in `.seraph_cache/embeddings/`. They are read from disk without loading the model, because embedding the 8,765-document corpus on the Gemini free tier (1,000 texts per day) would take about nine days. All API responses (embeddings, rerank orders, LLM analyses) are cached in SQLite or JSON under `.seraph_cache/`, so reruns are free.
 
 ## Evaluation protocol (AppsRetrieval, CoIR)
 
@@ -123,7 +141,7 @@ The graph, dedup and evolution components cannot show gains on AppsRetrieval: it
 
 ### Dense model sweep
 
-On dev / dev_stdin NDCG@10: Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
+On dev_stdin NDCG@10, BGE-Code-v1 scores 0.989. That number overstates it: BGE-Code-v1 was trained on code-retrieval data that likely includes these train queries, so only the test split (0.9795) is a fair measure. On dev / dev_stdin NDCG@10: Qwen3-Embedding-0.6B scores 0.837 / 0.722, gte-modernbert 0.705 / 0.505, CodeSage-small 0.680 / 0.319, CodeRankEmbed 0.650 / 0.206 and jina-code-v2 0.601 / 0.160. CodeBERT, GraphCodeBERT and UniXcoder used without retrieval fine-tuning score under 0.11. The stdin shift costs every model, but much less for the instruction-tuned Qwen3 (`experiments/results/dense_sweep.md`).
 
 ### Adaptive weights versus the oracle
 
@@ -155,14 +173,16 @@ seraph-eval tune-adaptive                  # adaptive weights table + learned mo
 seraph-eval ablate [--skip-api]            # ablation ladder -> experiments/results/ablation.md
 seraph-eval run experiments/configs/b9_structural.yaml --split dev_stdin
 seraph-eval ablate --final                 # once, at the very end (test split)
+seraph-eval submit --config experiments/configs/submission_bge.yaml --final   # upload JSON
 ```
 
 The Gemini key is read from `GEMINI_API_KEY`. On the free tier, a daily-quota error stops the affected rung and marks it `skipped (quota)` without failing the run.
 
 ## Limitations
 
-- Dense numbers come from cached local Qwen3 vectors; the Gemini embedder works but has not been benchmarked on the full corpus because of free-tier quota.
-- The test split has not been run. It needs Qwen3 query vectors for the 3,765 test queries (one local encoding pass) or a full Gemini re-embedding, and enough reranker quota for 3,765 listwise calls.
+- The Gemini embedder works but has not been benchmarked on the full corpus because of free-tier quota.
+- The test split was run without reranking: 3,765 listwise Gemini calls do not fit the free tier, and no local reranker has been benchmarked yet.
+- On macOS, `torch`, `faiss-cpu` and `scikit-learn` each ship their own OpenMP runtime. If a run aborts with `OMP: Error #15`, point the `libomp.dylib` copies under `faiss/.dylibs/` and `sklearn/.dylibs/` at the one in `torch/lib/`.
 - Dense query decomposition was not ablated: the sub-queries have no cached embeddings. BM25 decomposition is in `b7_bm25_decomp`.
 - Measured latency excludes query encoding when vectors come from the cache.
 - Graph, evolution and dedup gains need SeraphBench, which is not yet available.

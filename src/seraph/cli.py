@@ -23,14 +23,21 @@ def main() -> None:
     search.add_argument("--ref", default="HEAD")
     search.add_argument("--history", action="store_true", help="Search all indexed versions")
     search.add_argument("--limit", type=int, default=10)
+    search.add_argument("--engine", choices=("pipeline", "baseline"), default="pipeline",
+                        help="retrieval pipeline (SERAPH_CONFIG) or the index's built-in lexical baseline")
     commands.add_parser("versions", help="List indexed commit IDs")
     args = parser.parse_args()
     with VersionedIndex(args.repo, args.db) as store:
         if args.command == "index":
             print(json.dumps(asdict(store.index_commit(args.ref, args.base)), indent=2))
-        elif args.command == "search":
+        elif args.command == "search" and args.engine == "baseline":
             print(json.dumps([{"score": hit.score, **asdict(hit.chunk)} for hit in
                               store.search(args.query, args.ref, args.limit, args.history)], indent=2))
+        elif args.command == "search":
+            from .service import search_index
+
+            out = search_index(store, args.query, args.ref, args.limit, args.history)
+            print(json.dumps(out["results"], indent=2))
         else:
             print(json.dumps(store.indexed_versions(), indent=2))
 

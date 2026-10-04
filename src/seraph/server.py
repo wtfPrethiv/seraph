@@ -9,6 +9,7 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 
 from .index import VersionedIndex
+from .service import search_index
 
 mcp = FastMCP("Seraph")
 
@@ -25,18 +26,10 @@ def _results(query: str, version: str, limit: int, include_history: bool) -> dic
     if not 1 <= limit <= 20:
         raise ValueError("limit must be between 1 and 20")
     with _store() as store:
-        stats = store.index_commit(version)
-        hits = store.search(query, version, limit, include_history)
-        return {
-            "query": query,
-            "requested_version": version,
-            "resolved_commit": stats.commit,
-            "results": [
-                {"score": round(hit.score, 4), **asdict(hit.chunk),
-                 "text": hit.chunk.text[:4000]}
-                for hit in hits
-            ],
-        }
+        out = search_index(store, query, version, limit, include_history)
+    for r in out["results"]:
+        r["text"] = r["text"][:4000]
+    return out
 
 
 @mcp.tool()

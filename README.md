@@ -26,14 +26,17 @@ Each view returns scored chunks, and fusion is either RRF or a weighted sum of p
 Interfaces shared with the indexing side (`ChunkStore`, `CodeGraph`, `VersionStore`) live in `seraph.protocols`. In-memory versions for tests and fixtures are in `seraph.memory`.
 
 ```python
-from seraph.retrieval.pipeline import register_repo, search
-register_repo("myrepo", store, graph=graph, versions=versions)   # protocol implementations
+from seraph.retrieval.pipeline import Pipeline, register_repo, search
+pipe = Pipeline.from_config(cfg, store, graph=graph, versions=versions)   # protocol implementations
+register_repo("myrepo", pipe)
 search("where is the config parsed", repo="myrepo", top_k=10, include_history=True).to_dict()
 ```
 
 ## Versioned index, CLI and MCP server
 
-`seraph.index.VersionedIndex` stores Python function/class chunks (plus file chunks for JavaScript, TypeScript and Go) per Git commit in SQLite. Files unchanged since an already-indexed parent commit are reused instead of re-parsed. Search currently uses the index's built-in lexical baseline; the `Pipeline` above is not yet connected to it.
+`seraph.index.VersionedIndex` stores Python function/class chunks (plus file chunks for JavaScript, TypeScript and Go) per Git commit in SQLite. Files unchanged since an already-indexed parent commit are reused instead of re-parsed.
+
+`seraph.service` connects the two halves. `IndexChunkStore` exposes an index snapshot as a `ChunkStore`, and `search_index()` ranks it with the `Pipeline`, caching one built pipeline per repo, commit set and config. The CLI and MCP server both go through it. By default the pipeline is BM25 with the code-aware tokenizer and makes no API calls; set `SERAPH_CONFIG=configs/service_hybrid.yaml` to add Gemini embeddings. `seraph search --engine baseline` runs the index's original keyword search for comparison. Until the index tracks lineage, chunks are linked across commits by `path::symbol`.
 
 ```bash
 uv sync

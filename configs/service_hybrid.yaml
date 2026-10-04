@@ -1,0 +1,10 @@
+# Repository search with BM25 + Gemini embeddings, fused with RRF.
+# Use with: SERAPH_CONFIG=configs/service_hybrid.yaml (needs GEMINI_API_KEY).
+# Every chunk is embedded once and cached per text; the free tier allows ~1,000 texts per day.
+name: service_hybrid
+retrieval:
+  use_bm25: true
+  use_dense: true
+  dense_model: gemini-embedding-001
+  fusion: rrf
+  use_query_analyzer: true

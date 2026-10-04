@@ -1,0 +1,7 @@
+# Frozen config for the AppsRetrieval test-split submission: `seraph-eval submit --final`.
+# Best dev_stdin config that makes no API calls (BM25 + Qwen3-Embedding-0.6B + structural gamma,
+# weighted fusion): dev 0.8530 / dev_stdin 0.7397 NDCG@10.
+# Qwen3 runs locally on CPU or GPU to embed the test queries; cached corpus vectors are reused.
+extends: b9_structural.yaml
+name: submission
+allow_local_models: true

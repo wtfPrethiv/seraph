@@ -69,6 +69,7 @@ def submit(
     config: str = "experiments/configs/submission.yaml",
     final: bool = typer.Option(False, "--final", help="Required: this scores the AppsRetrieval test split"),
     out: str = "appsretrieval_results.json",
+    predictions: str | None = typer.Option(None, help="folder for mteb's per-query rankings"),
     batch_size: int = 64,
     set_: list[str] = typer.Option([], "--set", help="override, e.g. retrieval.rerank_depth=10"),
 ) -> None:
@@ -96,7 +97,11 @@ def submit(
     model = SeraphMTEBModel(build_search, cfg.name, config_hash(cfg), batch_size)
     t0 = time.perf_counter()
     result = mteb.evaluate(
-        model, [mteb.get_task(TASK_NAME)], encode_kwargs={"batch_size": batch_size}, overwrite_strategy="always"
+        model,
+        [mteb.get_task(TASK_NAME)],
+        encode_kwargs={"batch_size": batch_size},
+        overwrite_strategy="always",
+        prediction_folder=predictions,
     )
     task_result = list(result.task_results)[0]
     task_result.to_disk(Path(out))  # to_dict() keeps a datetime that json.dump rejects

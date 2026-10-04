@@ -23,14 +23,12 @@ RUNS_DIR = Path("experiments/runs")
 
 
 def set_seed(seed: int) -> None:
+    import sys
+
     random.seed(seed)
     np.random.seed(seed)
-    try:
-        import torch
-
-        torch.manual_seed(seed)
-    except ImportError:
-        pass
+    if "torch" in sys.modules:  # never import torch just to seed it
+        sys.modules["torch"].manual_seed(seed)
 
 
 def git_sha() -> str:

@@ -196,6 +196,7 @@ class SeraphConfig(BaseModel):
     device: str = "auto"
     cache_dir: str = ".seraph_cache"
     cache_query_embeddings: bool = True  # turn off when measuring latency
+    allow_local_models: bool = False  # local models may still serve vectors already in the cache
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
 

@@ -45,7 +45,9 @@ class Pipeline:
             from seraph.retrieval.semantic import CachedEmbedder, load_embedder
 
             r = self.cfg.retrieval
-            inner = load_embedder(r.dense_model, self.cfg.device, self.cfg.cache_path, r.dense_fallback)
+            inner = load_embedder(
+                r.dense_model, self.cfg.device, self.cfg.cache_path, r.dense_fallback, self.cfg.allow_local_models
+            )
             if EMBEDDERS[inner.name].is_api:
                 self._embedder = inner  # API backend caches per text itself
             else:
@@ -156,7 +158,12 @@ class Pipeline:
 
             r = self.cfg.retrieval
             self._reranker = load_reranker(
-                r.reranker_model, self.cfg.device, self.cfg.cache_path, r.rerank_blend, r.reranker_fallback
+                r.reranker_model,
+                self.cfg.device,
+                self.cfg.cache_path,
+                r.rerank_blend,
+                r.reranker_fallback,
+                self.cfg.allow_local_models,
             )
         return self._reranker
 

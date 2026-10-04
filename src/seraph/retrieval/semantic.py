@@ -151,19 +151,29 @@ def _hf_cached_revision(spec: ModelSpec) -> str | None:
     return ref.read_text().strip() if ref.exists() else None
 
 
+class LocalModelsDisabledError(RuntimeError):
+    pass
+
+
 class LazyLocalEmbedder:
     """Defers loading a local model until a text is not found in the embedding cache."""
 
-    def __init__(self, spec: ModelSpec, device: str = "auto") -> None:
+    def __init__(self, spec: ModelSpec, device: str = "auto", allow_load: bool = True) -> None:
         self.spec = spec
         self.name = spec.name
         self.device = device
+        self.allow_load = allow_load
         self._model: Embedder | None = None
         self.revision = _hf_cached_revision(spec) or "unknown"
 
     @property
     def model(self) -> Embedder:
         if self._model is None:
+            if not self.allow_load:
+                raise LocalModelsDisabledError(
+                    f"{self.spec.name} needs to embed texts that are not cached, and local models are "
+                    "disabled (allow_local_models: false). Use an API embedder or enable local models."
+                )
             log.info("loading local embedder %s", self.spec.hf_id)
             self._model = _load_local(self.spec, self.device)
             self.revision = getattr(self._model, "revision", self.revision)
@@ -185,6 +195,7 @@ def load_embedder(
     device: str = "auto",
     cache_dir: str | Path = ".seraph_cache",
     fallback: str | None = None,
+    allow_local: bool = True,
 ) -> Embedder:
     """API models first; `fallback` (usually local) is used only when the API key is missing."""
     import os
@@ -195,9 +206,9 @@ def load_embedder(
 
         if fallback and not os.environ.get(spec.options.get("api_key_env", "GEMINI_API_KEY")):
             log.warning("no API key for %s; falling back to %s", name, fallback)
-            return load_embedder(fallback, device, cache_dir)
+            return load_embedder(fallback, device, cache_dir, allow_local=allow_local)
         return GeminiEmbedder(spec, cache_dir)
-    return LazyLocalEmbedder(spec, device)
+    return LazyLocalEmbedder(spec, device, allow_load=allow_local)
 
 
 class CachedEmbedder:

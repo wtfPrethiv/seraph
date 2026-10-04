@@ -170,6 +170,7 @@ def load_reranker(
     cache_dir: str | Path | None = None,
     blend: float = 0.0,
     fallback: str | None = None,
+    allow_local: bool = True,
 ):
     """API rerankers first; `fallback` (usually local) is used only when the API key is missing."""
     import os
@@ -179,7 +180,11 @@ def load_reranker(
         from seraph.backends.gemini import GeminiListwiseReranker
 
         if fallback and not os.environ.get(spec.options.get("api_key_env", "GEMINI_API_KEY")):
-            return load_reranker(fallback, device, cache_dir, blend)
+            return load_reranker(fallback, device, cache_dir, blend, allow_local=allow_local)
         return GeminiListwiseReranker(spec, cache_dir or ".seraph_cache", blend)
+    if not allow_local:
+        from seraph.retrieval.semantic import LocalModelsDisabledError
+
+        raise LocalModelsDisabledError(f"{name} is a local reranker and allow_local_models is false")
     cls = CausalLMReranker if spec.backend == "causal_reranker" else CrossEncoderReranker
     return cls(spec, device=device, cache_dir=cache_dir, blend=blend)

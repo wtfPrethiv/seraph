@@ -29,6 +29,18 @@ def test_dense_retriever_and_cache(tmp_path):
     assert r.doc_vectors([chunks[1].chunk_hash]).shape == (1, 64)
 
 
+def test_local_models_disabled_guard(tmp_path):
+    from seraph.config import EMBEDDERS
+    from seraph.retrieval.reranker import load_reranker
+    from seraph.retrieval.semantic import LazyLocalEmbedder, LocalModelsDisabledError
+
+    e = CachedEmbedder(LazyLocalEmbedder(EMBEDDERS["qwen3-emb-0.6b"], allow_load=False), tmp_path)
+    with pytest.raises(LocalModelsDisabledError):
+        e.encode_documents(["not cached"] * 10)
+    with pytest.raises(LocalModelsDisabledError):
+        load_reranker("bge-reranker-v2-m3", allow_local=False)
+
+
 @pytest.mark.gpu
 def test_real_embedder_smoke():
     pytest.importorskip("sentence_transformers")

@@ -1,6 +1,65 @@
 # seraph
 Seraph - a query-adaptive code intelligence engine that combines semantic, lexical, structural, dependency, and Git-aware retrieval to help coding agents understand large, evolving codebases.
 
+## For judges
+
+Everything below runs locally with no API keys. Commands are run from the repository root.
+
+**1. Setup**
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh          # only if uv is missing
+git clone https://github.com/wtfPrethiv/seraph && cd seraph
+uv sync --extra eval --extra cpu --extra mcp            # use --extra gpu instead of cpu on a CUDA machine
+source .venv/bin/activate
+seraph-eval train-structural                            # trains the structural (γ) model on the train split, about a minute
+```
+
+On macOS, if a run stops with `OMP: Error #15`, see the OpenMP note under [Limitations](#limitations).
+
+**2. P0: the screening score** (already attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0): nDCG@10 0.9770, MRR@10 0.9702)
+
+```bash
+seraph-eval submit --final --out appsretrieval_results.json
+```
+
+The first run downloads BGE-Code-v1 (about 6 GB) and embeds the 8,765 corpus solutions once; on an Apple M5 GPU the whole run took about an hour. Embeddings are cached in `.seraph_cache/`, so later runs and step 3 reuse them.
+
+**3. Hands-on: ask your own questions** with the submitted pipeline (BM25 + BGE-Code-v1 + structural γ)
+
+```bash
+seraph-eval ask "Read an integer n and print the sum of the digits of n factorial."
+seraph-eval ask --file problem.txt --top-k 10
+seraph-eval ask        # paste problems one by one; end each with a line holding only "."
+```
+
+Loading takes about 20 s once the corpus is embedded; each question then takes 15 to 600 ms. Results show the code, the score of each view and the search time. A question taken from the dataset gets its known correct solution marked.
+
+**4. P1: retrieval across versions** on any Git repository (this one works)
+
+```bash
+export SERAPH_CONFIG=experiments/configs/submission.yaml    # BGE pipeline; unset it for the instant keyword-only mode
+seraph --repo . index --ref HEAD~1
+seraph --repo . index --ref HEAD                            # re-parses only changed files: 1 file, 350 of 367 chunks reused, 0.18 s
+seraph --repo . search "where is the BM25 index built"
+seraph --repo . search "where is the BM25 index built" --ref HEAD~1
+```
+
+With `SERAPH_CONFIG` set, the first search of a version embeds its chunks (about 45 s for this repository on an M5); later searches take under a second.
+
+**5. Bonus: evolutionary retrieval**
+
+```bash
+seraph --repo . search "how are identical chunks merged across versions" --history   # every indexed version, identical code shown once
+seraph --repo . compare HEAD~1 HEAD                                                   # changed symbols, dependencies and commits
+seraph --repo . symbol search_index
+seraph --repo . deps search_index --direction out
+```
+
+Symbols are followed across commits through renames and moves, so history results stay linked when code is renamed.
+
+**6. In a coding agent (optional).** [Morpheus](https://github.com/projectakshith/morpheus/tree/seraph-test) calls Seraph over MCP; see [MCP server](#mcp-server-morpheus-and-other-agents).
+
 ## Results
 
 CoIR `AppsRetrieval`, test split (3,765 queries over 8,765 Python solutions), scored through `mteb.evaluate`. The submitted JSON is attached to the [v1.0 release](https://github.com/wtfPrethiv/seraph/releases/tag/v1.0).
@@ -21,18 +80,6 @@ seraph-eval submit --config experiments/configs/submission.yaml --final --out ap
 ```
 
 Add `--set retrieval.dense_model=qwen3-emb-0.6b` for the Qwen3 row. The first run downloads the model (about 6 GB) and embeds the corpus once; embeddings are cached under `.seraph_cache/`, so later runs only encode queries. On Apple silicon the model runs on the GPU (MPS).
-
-### Try it on your own questions
-
-`seraph-eval ask` ranks the same 8,765 solutions with the submitted pipeline and prints the top matches with their code, per-view scores and the search time:
-
-```bash
-seraph-eval ask "Read an integer n and print the sum of the digits of n factorial."
-seraph-eval ask --file problem.txt --top-k 10
-seraph-eval ask                      # paste problems one by one, end each with a line holding only "."
-```
-
-Loading takes about 20 s (model and indexes); each question then takes well under a second. If the question is one of the dataset's queries, the known correct solution is marked.
 
 **How the test split was used.** The Qwen3 row was the first, frozen submission. We then compared embedders on dev, switched the dense view to BGE-Code-v1 and ran the test split again with the fusion weights unchanged (they were tuned for Qwen3, never on test). An intermediate run of BGE-Code-v1 alone, without BM25 or γ, scored 0.9795, so on this benchmark the extra views add nothing on top of a strong embedder. BGE-Code-v1 was trained on public code-retrieval data that likely overlaps the APPS train queries (dev_stdin 0.989); its test score matches the 98.08 its authors report.
 
